@@ -19,5 +19,5 @@ struct ContentView: View {
 #Preview {
     // The preview uses an in-memory SwiftData container so preview data never touches app storage.
     ContentView()
-        .modelContainer(for: LocationRecord.self, inMemory: true)
+        .modelContainer(for: [LocationRecord.self, FamilyMember.self], inMemory: true)
 }

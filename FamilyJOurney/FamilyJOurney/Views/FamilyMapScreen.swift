@@ -5,6 +5,7 @@
 //  Created by Aulia Nur Fajriyah on 10/06/26.
 //
 
+import CoreLocation
 import MapKit
 import SwiftData
 import SwiftUI
@@ -13,6 +14,9 @@ import SwiftUI
 struct FamilyMapScreen: View {
     // @Query asks SwiftData for all LocationRecord objects and refreshes this view whenever they change.
     @Query(sort: \LocationRecord.timestamp) private var locationRecords: [LocationRecord]
+
+    // Querying members forces the map screen to refresh when any member's color, emoji, or name is updated.
+    @Query(sort: \FamilyMember.name) private var members: [FamilyMember]
 
     // The model context is the write gateway for inserting sample records during this learning MVP.
     @Environment(\.modelContext) private var modelContext
@@ -25,6 +29,15 @@ struct FamilyMapScreen: View {
 
     // This state controls whether the marker detail sheet is visible after a marker tap.
     @State private var isShowingLocationDetails = false
+
+    // This state controls whether the manual location entry sheet is visible.
+    @State private var isShowingAddLocationSheet = false
+
+    // This state controls whether the journey legend sheet is visible.
+    @State private var isShowingLegendSheet = false
+
+    // Stores the IDs of family members whose journeys are currently hidden.
+    @State private var hiddenMemberIDs: Set<UUID> = []
 
     // The body renders the map first, because the map is the main learning surface for this screen.
     var body: some View {
@@ -53,10 +66,22 @@ struct FamilyMapScreen: View {
                 LocationDetailSheet(record: selectedRecord)
                     .presentationDetents([.medium])
             }
+            .sheet(isPresented: $isShowingAddLocationSheet) {
+                AddLocationSheet()
+            }
+            .sheet(isPresented: $isShowingLegendSheet) {
+                FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
+                    .presentationDetents([.medium, .large])
+            }
+            .onChange(of: hiddenMemberIDs) { _, _ in
+                fitCameraToSavedLocations()
+            }
             .overlay(alignment: .bottom) {
                 if locationRecords.isEmpty {
-                    EmptyMapHint(addSampleLocations: addSampleLocations)
-                        .padding()
+                    EmptyMapHint {
+                        isShowingAddLocationSheet = true
+                    }
+                    .padding()
                 }
             }
         }
@@ -76,13 +101,103 @@ struct FamilyMapScreen: View {
         }
     }
 
-    // This builder turns each SwiftData LocationRecord into one tappable map marker.
+    // This builder turns each SwiftData LocationRecord into one/grouped map annotations.
     @MapContentBuilder
     private var locationMarkers: some MapContent {
-        ForEach(locationRecords, id: \.id) { record in
-            Marker(record.cityName, coordinate: record.coordinate)
-                .tint(FamilyMemberColor.color(for: record.familyMemberName))
-                .tag(record.id)
+        let visibleRecords = locationRecords.filter { record in
+            if let member = record.member {
+                return !hiddenMemberIDs.contains(member.id)
+            }
+            return true
+        }
+
+        let clusters = clusterLocations(visibleRecords)
+
+        ForEach(clusters) { cluster in
+            let uniqueMembers = Array(Set(cluster.records.compactMap { $0.member }))
+                .sorted(by: { $0.name < $1.name })
+            
+            let latestRecord = cluster.records.max(by: { $0.timestamp < $1.timestamp }) ?? cluster.records[0]
+            
+            let annotationTitle = cluster.records.count == 1 
+                ? latestRecord.cityName 
+                : "\(cluster.records.count) stops (\(latestRecord.cityName))"
+
+            Annotation(annotationTitle, coordinate: cluster.coordinate) {
+                VStack(spacing: 4) {
+                    if uniqueMembers.count == 1, let member = uniqueMembers.first {
+                        if let avatarData = member.avatarImageData, let uiImage = UIImage(data: avatarData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 38, height: 38)
+                                .clipShape(Circle())
+                                .background(Circle().fill(Color(uiColor: .systemBackground)))
+                                .overlay(
+                                    Circle()
+                                        .stroke(member.color, lineWidth: 3)
+                                )
+                                .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
+                        } else {
+                            Text(member.emoji)
+                                .font(.system(size: 26))
+                                .padding(6)
+                                .background(Circle().fill(Color(uiColor: .systemBackground)))
+                                .overlay(
+                                    Circle()
+                                        .stroke(member.color, lineWidth: 3)
+                                )
+                                .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
+                        }
+                    } else {
+                        let limit = 3
+                        let displayedMembers = Array(uniqueMembers.prefix(limit))
+                        let remainingCount = uniqueMembers.count - displayedMembers.count
+                        
+                        HStack(spacing: -10) {
+                            ForEach(displayedMembers) { member in
+                                if let avatarData = member.avatarImageData, let uiImage = UIImage(data: avatarData) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 32, height: 32)
+                                        .clipShape(Circle())
+                                        .background(Circle().fill(Color(uiColor: .systemBackground)))
+                                        .overlay(
+                                            Circle()
+                                                .stroke(member.color, lineWidth: 2)
+                                        )
+                                        .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
+                                } else {
+                                    Text(member.emoji)
+                                        .font(.system(size: 20))
+                                        .padding(4)
+                                        .background(Circle().fill(Color(uiColor: .systemBackground)))
+                                        .overlay(
+                                            Circle()
+                                                .stroke(member.color, lineWidth: 2)
+                                        )
+                                        .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
+                                }
+                            }
+                            
+                            if remainingCount > 0 {
+                                Text("+\(remainingCount)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(Color.gray))
+                                    .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                                    .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
+                            }
+                        }
+                        .padding(4)
+                        .background(Capsule().fill(Color(uiColor: .systemBackground)))
+                        .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    }
+                }
+            }
+            .tag(latestRecord.id)
         }
     }
 
@@ -96,21 +211,35 @@ struct FamilyMapScreen: View {
             .disabled(locationRecords.isEmpty)
         }
 
-        ToolbarItem(placement: .topBarTrailing) {
-            Button("Sample") {
-                addSampleLocations()
+        ToolbarItemGroup(placement: .topBarTrailing) {
+          
+            Button {
+                isShowingAddLocationSheet = true
+            } label: {
+                Label("Add Location", systemImage: "plus")
+            }
+            Button {
+                isShowingLegendSheet = true
+            } label: {
+                Label("Legend", systemImage: "line.3.horizontal.decrease.circle")
             }
         }
+
+        
     }
 
     // Journey groups convert raw SwiftData records into MapKit-friendly polyline inputs.
     private var journeyGroups: [JourneyGroup] {
         let groupedRecords = Dictionary(grouping: locationRecords) { record in
-            record.familyMemberName
+            record.member
         }
 
-        return groupedRecords.keys.sorted().compactMap { memberName in
-            guard let records = groupedRecords[memberName] else {
+        // Filter out members that are currently hidden by the user.
+        let visibleMembers = groupedRecords.keys.compactMap { $0 }
+            .filter { !hiddenMemberIDs.contains($0.id) }
+
+        return visibleMembers.sorted(by: { $0.name < $1.name }).compactMap { member in
+            guard let records = groupedRecords[member] else {
                 return nil
             }
 
@@ -119,8 +248,8 @@ struct FamilyMapScreen: View {
             }
 
             return JourneyGroup(
-                memberName: memberName,
-                color: FamilyMemberColor.color(for: memberName),
+                memberName: member.name,
+                color: member.color,
                 coordinates: sortedRecords.map(\.coordinate)
             )
         }
@@ -128,25 +257,65 @@ struct FamilyMapScreen: View {
 
     // This helper moves the map camera to a region that includes all saved records.
     private func fitCameraToSavedLocations() {
-        let region = MKCoordinateRegion.region(fitting: locationRecords, defaultRegion: Self.defaultRegion)
+        let visibleRecords = locationRecords.filter { record in
+            if let member = record.member {
+                return !hiddenMemberIDs.contains(member.id)
+            }
+            return true
+        }
+        let region = MKCoordinateRegion.region(fitting: visibleRecords, defaultRegion: Self.defaultRegion)
         cameraPosition = .region(region)
     }
 
-    // This helper inserts sample records through SwiftData so @Query can refresh the map automatically.
-    private func addSampleLocations() {
-        modelContext.insertSampleLocationRecords()
-        fitCameraToSavedLocations()
-    }
+
 
     // The default region centers on Indonesia before any saved SwiftData records exist.
     private static let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: -2.5489, longitude: 118.0149),
         span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
     )
+
+    // Location clustering structure
+    private struct LocationCluster: Identifiable {
+        let id: UUID
+        let coordinate: CLLocationCoordinate2D
+        let records: [LocationRecord]
+    }
+
+    // Cluster location records within a specific radius in meters
+    private func clusterLocations(_ records: [LocationRecord], radiusMeters: Double = 50.0) -> [LocationCluster] {
+        var clusters: [LocationCluster] = []
+        
+        for record in records {
+            let recordLoc = CLLocation(latitude: record.latitude, longitude: record.longitude)
+            
+            if let index = clusters.firstIndex(where: { cluster in
+                let clusterLoc = CLLocation(latitude: cluster.coordinate.latitude, longitude: cluster.coordinate.longitude)
+                return recordLoc.distance(from: clusterLoc) < radiusMeters
+            }) {
+                let existingCluster = clusters[index]
+                var updatedRecords = existingCluster.records
+                updatedRecords.append(record)
+                clusters[index] = LocationCluster(
+                    id: existingCluster.id,
+                    coordinate: existingCluster.coordinate,
+                    records: updatedRecords
+                )
+            } else {
+                clusters.append(LocationCluster(
+                    id: UUID(),
+                    coordinate: record.coordinate,
+                    records: [record]
+                ))
+            }
+        }
+        
+        return clusters
+    }
 }
 
 #Preview {
     // The preview uses an in-memory SwiftData container so sample preview data never touches app storage.
     FamilyMapScreen()
-        .modelContainer(for: LocationRecord.self, inMemory: true)
+        .modelContainer(for: [LocationRecord.self, FamilyMember.self], inMemory: true)
 }

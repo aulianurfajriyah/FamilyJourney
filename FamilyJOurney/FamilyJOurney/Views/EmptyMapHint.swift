@@ -9,8 +9,8 @@ import SwiftUI
 
 // EmptyMapHint gives a clear empty state before the user has entered real locations.
 struct EmptyMapHint: View {
-    // The parent passes in the insert action so this child does not need direct SwiftData access.
-    let addSampleLocations: () -> Void
+    // The parent passes in the action to show the add location screen.
+    let addLocationAction: () -> Void
 
     // The body renders a compact callout over the map.
     var body: some View {
@@ -18,12 +18,12 @@ struct EmptyMapHint: View {
             Text("No saved locations yet")
                 .font(.headline)
 
-            Text("Add sample records to see SwiftData markers and journey polylines on the map.")
+            Text("Add location stops to see SwiftData markers and journey polylines on the map.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
-            Button("Add Sample Locations", action: addSampleLocations)
+            Button("Add Location Stop", action: addLocationAction)
                 .buttonStyle(.borderedProminent)
         }
         .padding()

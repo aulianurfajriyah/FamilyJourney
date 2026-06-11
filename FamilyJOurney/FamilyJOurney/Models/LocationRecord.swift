@@ -12,38 +12,36 @@ import SwiftData
 @Model
 final class LocationRecord {
     // A stable identifier lets SwiftUI, MapKit selection, and SwiftData refer to the same record.
-    var id: UUID
+    var id: UUID = UUID()
 
-    // The family member name is intentionally simple for the MVP instead of a separate relationship model.
-    var familyMemberName: String
+    // The relationship linking this location record to its family member owner.
+    var member: FamilyMember?
 
     // The city name is shown in marker detail UI.
-    var cityName: String
+    var cityName: String = ""
 
     // Latitude is stored as a Double because SwiftData persists simple value types cleanly.
-    var latitude: Double
+    var latitude: Double = 0.0
 
     // Longitude is stored separately from latitude instead of storing CLLocationCoordinate2D directly.
-    var longitude: Double
+    var longitude: Double = 0.0
 
     // The timestamp defines the order of each member's journey history.
-    var timestamp: Date
+    var timestamp: Date = Date()
 
     // Notes are optional user-facing detail for a saved location.
-    var note: String
+    var note: String = ""
 
     // This initializer creates complete records from form input, sample data, or future import flows.
     init(
         id: UUID = UUID(),
-        familyMemberName: String,
-        cityName: String,
-        latitude: Double,
-        longitude: Double,
+        cityName: String = "",
+        latitude: Double = 0.0,
+        longitude: Double = 0.0,
         timestamp: Date = Date(),
         note: String = ""
     ) {
         self.id = id
-        self.familyMemberName = familyMemberName
         self.cityName = cityName
         self.latitude = latitude
         self.longitude = longitude

@@ -17,7 +17,7 @@ struct FamilyJOurneyApp: App {
             // ContentView can read and write LocationRecord data through the model container below.
             ContentView()
         }
-        // The model container stores LocationRecord objects and makes @Query work throughout the view tree.
-        .modelContainer(for: LocationRecord.self)
+        // The model container stores location and family member objects and makes @Query work throughout the view tree.
+        .modelContainer(for: [LocationRecord.self, FamilyMember.self])
     }
 }
