@@ -65,13 +65,23 @@ struct FamilyMapScreen: View {
             .sheet(isPresented: $isShowingLocationDetails) {
                 LocationDetailSheet(record: selectedRecord)
                     .presentationDetents([.medium])
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(30)
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isShowingAddLocationSheet) {
                 AddLocationSheet()
+                    .presentationDetents([.large])
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(30)
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isShowingLegendSheet) {
                 FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
                     .presentationDetents([.medium, .large])
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(30)
+                    .presentationDragIndicator(.visible)
             }
             .onChange(of: hiddenMemberIDs) { _, _ in
                 fitCameraToSavedLocations()
@@ -126,74 +136,10 @@ struct FamilyMapScreen: View {
             Annotation(annotationTitle, coordinate: cluster.coordinate) {
                 VStack(spacing: 4) {
                     if uniqueMembers.count == 1, let member = uniqueMembers.first {
-                        if let avatarData = member.avatarImageData, let uiImage = UIImage(data: avatarData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 38, height: 38)
-                                .clipShape(Circle())
-                                .background(Circle().fill(Color(uiColor: .systemBackground)))
-                                .overlay(
-                                    Circle()
-                                        .stroke(member.color, lineWidth: 3)
-                                )
-                                .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
-                        } else {
-                            Text(member.emoji)
-                                .font(.system(size: 26))
-                                .padding(6)
-                                .background(Circle().fill(Color(uiColor: .systemBackground)))
-                                .overlay(
-                                    Circle()
-                                        .stroke(member.color, lineWidth: 3)
-                                )
-                                .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
-                        }
+                        MemberAvatarView(member: member, size: 38, borderWidth: 3)
+                            .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
                     } else {
-                        let limit = 3
-                        let displayedMembers = Array(uniqueMembers.prefix(limit))
-                        let remainingCount = uniqueMembers.count - displayedMembers.count
-                        
-                        HStack(spacing: -10) {
-                            ForEach(displayedMembers) { member in
-                                if let avatarData = member.avatarImageData, let uiImage = UIImage(data: avatarData) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 32, height: 32)
-                                        .clipShape(Circle())
-                                        .background(Circle().fill(Color(uiColor: .systemBackground)))
-                                        .overlay(
-                                            Circle()
-                                                .stroke(member.color, lineWidth: 2)
-                                        )
-                                        .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
-                                } else {
-                                    Text(member.emoji)
-                                        .font(.system(size: 20))
-                                        .padding(4)
-                                        .background(Circle().fill(Color(uiColor: .systemBackground)))
-                                        .overlay(
-                                            Circle()
-                                                .stroke(member.color, lineWidth: 2)
-                                        )
-                                        .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
-                                }
-                            }
-                            
-                            if remainingCount > 0 {
-                                Text("+\(remainingCount)")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 32, height: 32)
-                                    .background(Circle().fill(Color.gray))
-                                    .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
-                                    .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
-                            }
-                        }
-                        .padding(4)
-                        .background(Capsule().fill(Color(uiColor: .systemBackground)))
-                        .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                        MemberAvatarStackView(members: uniqueMembers, avatarSize: 32)
                     }
                 }
             }

@@ -80,19 +80,13 @@ struct AddMemberSheet: View {
 
                 Section("Avatar Photo (Memoji or Real Photo)") {
                     HStack(spacing: 16) {
-                        if let avatarData, let uiImage = UIImage(data: avatarData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 70, height: 70)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 1))
-                        } else {
-                            Text(selectedEmoji)
-                                .font(.system(size: 40))
-                                .frame(width: 70, height: 70)
-                                .background(Circle().fill(Color.secondary.opacity(0.1)))
-                        }
+                        MemberAvatarView(
+                            avatarImageData: avatarData,
+                            emoji: selectedEmoji,
+                            color: colorForName(selectedColorName),
+                            size: 70,
+                            showBorder: false
+                        )
                         
                         VStack(alignment: .leading, spacing: 8) {
                             PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
@@ -182,6 +176,7 @@ struct AddMemberSheet: View {
             }
             .navigationTitle("Add Family Member")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -247,19 +242,13 @@ struct EditMemberSheet: View {
 
                 Section("Avatar Photo (Memoji or Real Photo)") {
                     HStack(spacing: 16) {
-                        if let avatarData, let uiImage = UIImage(data: avatarData) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 70, height: 70)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 1))
-                        } else {
-                            Text(selectedEmoji)
-                                .font(.system(size: 40))
-                                .frame(width: 70, height: 70)
-                                .background(Circle().fill(Color.secondary.opacity(0.1)))
-                        }
+                        MemberAvatarView(
+                            avatarImageData: avatarData,
+                            emoji: selectedEmoji,
+                            color: colorForName(selectedColorName),
+                            size: 70,
+                            showBorder: false
+                        )
                         
                         VStack(alignment: .leading, spacing: 8) {
                             PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
@@ -348,6 +337,7 @@ struct EditMemberSheet: View {
             }
             .navigationTitle("Edit Family Member")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

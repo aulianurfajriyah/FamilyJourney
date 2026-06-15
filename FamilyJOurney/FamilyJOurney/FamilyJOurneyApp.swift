@@ -18,6 +18,6 @@ struct FamilyJOurneyApp: App {
             ContentView()
         }
         // The model container stores location and family member objects and makes @Query work throughout the view tree.
-        .modelContainer(for: [LocationRecord.self, FamilyMember.self])
+        .modelContainer(for: [LocationRecord.self, FamilyMember.self, SavedLocation.self])
     }
 }

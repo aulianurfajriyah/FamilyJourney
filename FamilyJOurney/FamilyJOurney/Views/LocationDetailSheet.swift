@@ -15,19 +15,29 @@ struct LocationDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @Query(sort: \FamilyMember.name) private var members: [FamilyMember]
+    @Query(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
 
     // The record is optional because a selection can disappear after SwiftData updates or deletes data.
     let record: LocationRecord?
+
+    enum LocationInputSource: String, CaseIterable, Identifiable {
+        case preset = "Saved Preset"
+        case manual = "Manual Entry"
+        var id: String { self.rawValue }
+    }
 
     // Editing State
     @State private var isEditing = false
     @State private var editedMemberID: UUID?
     @State private var editedNewMemberName = ""
-    @State private var editedCityName = ""
-    @State private var editedLatitudeString = ""
-    @State private var editedLongitudeString = ""
+    @State private var inputSource: LocationInputSource = .preset
+    @State private var editedSavedLocationID: UUID?
+    @State private var cityName = ""
+    @State private var latitudeString = ""
+    @State private var longitudeString = ""
     @State private var editedTimestamp = Date()
     @State private var editedNote = ""
+    @State private var isShowingManagePresets = false
 
     // Map selection camera position centered on default location
     @State private var mapCameraPosition: MapCameraPosition = .region(MKCoordinateRegion(
@@ -35,22 +45,30 @@ struct LocationDetailSheet: View {
         span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
     ))
 
-    // Parsing inputs to Doubles
-    private var editedLatitude: Double? {
-        Double(editedLatitudeString)
+    private var selectedSavedLocation: SavedLocation? {
+        savedLocations.first { $0.id == editedSavedLocationID }
     }
 
-    private var editedLongitude: Double? {
-        Double(editedLongitudeString)
+    private var manualLatitude: Double? {
+        Double(latitudeString)
+    }
+
+    private var manualLongitude: Double? {
+        Double(longitudeString)
     }
 
     // Checking if form input is valid
     private var isFormValid: Bool {
         let isMemberValid = editedMemberID != nil || !editedNewMemberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return isMemberValid &&
-               !editedCityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-               editedLatitude != nil &&
-               editedLongitude != nil
+        switch inputSource {
+        case .preset:
+            return isMemberValid && editedSavedLocationID != nil
+        case .manual:
+            return isMemberValid &&
+                   !cityName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                   manualLatitude != nil &&
+                   manualLongitude != nil
+        }
     }
 
     // The body shows either selected record details, editing form, or a fallback message.
@@ -120,6 +138,7 @@ struct LocationDetailSheet: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden) // Liquid glass styling compliance
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") {
@@ -151,52 +170,115 @@ struct LocationDetailSheet: View {
             }
 
             Section("Location Details") {
-                TextField("City Name (e.g. Bandung)", text: $editedCityName)
-                    .autocorrectionDisabled()
-                    .font(.body) // Dynamic Type compliance
-
-                TextField("Latitude (e.g. -6.9175)", text: $editedLatitudeString)
-                    .keyboardType(.numbersAndPunctuation)
-                    .autocorrectionDisabled()
-                    .font(.body) // Dynamic Type compliance
-                    .onChange(of: editedLatitudeString) { _, _ in
-                        updateMapCamera()
-                    }
-
-                TextField("Longitude (e.g. 107.6191)", text: $editedLongitudeString)
-                    .keyboardType(.numbersAndPunctuation)
-                    .autocorrectionDisabled()
-                    .font(.body) // Dynamic Type compliance
-                    .onChange(of: editedLongitudeString) { _, _ in
-                        updateMapCamera()
-                    }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Or tap on the map to choose coordinates:")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    
-                    MapReader { proxy in
-                        Map(position: $mapCameraPosition) {
-                            if let lat = editedLatitude, let lon = editedLongitude {
-                                Marker(editedCityName.isEmpty ? "Selected" : editedCityName, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-                            }
-                        }
-                        .frame(height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .onTapGesture { position in
-                            if let coordinate = proxy.convert(position, from: .local) {
-                                editedLatitudeString = String(format: "%.6f", coordinate.latitude)
-                                editedLongitudeString = String(format: "%.6f", coordinate.longitude)
-                            }
-                        }
+                Picker("Input Source", selection: $inputSource) {
+                    ForEach(LocationInputSource.allCases) { source in
+                        Text(source.rawValue).tag(source)
                     }
                 }
-                .padding(.vertical, 8)
+                .pickerStyle(.segmented)
+                
+                if inputSource == .preset {
+                    if savedLocations.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("No saved locations available.")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                            
+                            Button(action: { isShowingManagePresets = true }) {
+                                Label("Manage Preset Locations", systemImage: "mappin.circle.fill")
+                                    .font(.body)
+                                    .fontWeight(.semibold)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        HStack {
+                            Picker("Select Place", selection: $editedSavedLocationID) {
+                                Text("Choose location...").tag(nil as UUID?)
+                                ForEach(savedLocations) { location in
+                                    Text(location.name).tag(location.id as UUID?)
+                                }
+                            }
+                            .font(.body)
+                            .onChange(of: editedSavedLocationID) { _, _ in
+                                updateMapCamera()
+                            }
+                            
+                            Button(action: { isShowingManagePresets = true }) {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.title3)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        if let selectedLocation = selectedSavedLocation {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Coordinates: \(String(format: "%.4f, %.4f", selectedLocation.latitude, selectedLocation.longitude))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                Map(position: $mapCameraPosition) {
+                                    Marker(selectedLocation.name, coordinate: CLLocationCoordinate2D(latitude: selectedLocation.latitude, longitude: selectedLocation.longitude))
+                                }
+                                .frame(height: 180)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                } else {
+                    TextField("City Name (e.g. Bandung)", text: $cityName)
+                        .autocorrectionDisabled()
+                        .font(.body)
+
+                    TextField("Latitude (e.g. -6.9175)", text: $latitudeString)
+                        .keyboardType(.numbersAndPunctuation)
+                        .autocorrectionDisabled()
+                        .font(.body)
+                        .onChange(of: latitudeString) { _, _ in
+                            updateManualMapCamera()
+                        }
+
+                    TextField("Longitude (e.g. 107.6191)", text: $longitudeString)
+                        .keyboardType(.numbersAndPunctuation)
+                        .autocorrectionDisabled()
+                        .font(.body)
+                        .onChange(of: longitudeString) { _, _ in
+                            updateManualMapCamera()
+                        }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Or tap on the map to choose coordinates:")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        
+                        MapReader { proxy in
+                            Map(position: $mapCameraPosition) {
+                                if let lat = manualLatitude, let lon = manualLongitude {
+                                    Marker(cityName.isEmpty ? "Selected" : cityName, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+                                }
+                            }
+                            .frame(height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                            .onTapGesture { position in
+                                if let coordinate = proxy.convert(position, from: .local) {
+                                    latitudeString = String(format: "%.6f", coordinate.latitude)
+                                    longitudeString = String(format: "%.6f", coordinate.longitude)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
             }
 
             Section("Timeline") {
@@ -209,6 +291,14 @@ struct LocationDetailSheet: View {
                     .font(.body) // Dynamic Type compliance
                     .lineLimit(3...5)
             }
+        }
+        .scrollContentBackground(.hidden) // Liquid glass styling
+        .sheet(isPresented: $isShowingManagePresets) {
+            ManageSavedLocationsSheet()
+                .presentationDetents([.medium, .large])
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(30)
+                .presentationDragIndicator(.visible)
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -232,25 +322,49 @@ struct LocationDetailSheet: View {
         guard let record else { return }
         editedMemberID = record.member?.id
         editedNewMemberName = ""
-        editedCityName = record.cityName
-        editedLatitudeString = String(format: "%.6f", record.latitude)
-        editedLongitudeString = String(format: "%.6f", record.longitude)
+        
+        let foundPresetID = record.savedLocation?.id ?? savedLocations.first(where: {
+            $0.latitude == record.latitude && $0.longitude == record.longitude
+        })?.id
+        
+        if let foundPresetID {
+            editedSavedLocationID = foundPresetID
+            inputSource = .preset
+            cityName = ""
+            latitudeString = ""
+            longitudeString = ""
+        } else {
+            editedSavedLocationID = nil
+            inputSource = .manual
+            cityName = record.cityName
+            latitudeString = String(format: "%.6f", record.latitude)
+            longitudeString = String(format: "%.6f", record.longitude)
+        }
+        
         editedTimestamp = record.timestamp
         editedNote = record.note
         
         mapCameraPosition = .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: record.latitude, longitude: record.longitude),
-            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+            span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
         ))
         
         isEditing = true
     }
 
     private func updateMapCamera() {
-        guard let lat = editedLatitude, let lon = editedLongitude else { return }
+        guard let location = selectedSavedLocation else { return }
+        mapCameraPosition = .region(MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude),
+            span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+        ))
+    }
+
+    private func updateManualMapCamera() {
+        guard let lat = manualLatitude, let lon = manualLongitude else { return }
         mapCameraPosition = .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+            span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
         ))
     }
 
@@ -259,7 +373,7 @@ struct LocationDetailSheet: View {
     }
 
     private func saveChanges() {
-        guard let record, let lat = editedLatitude, let lon = editedLongitude else { return }
+        guard let record else { return }
         
         let targetMember: FamilyMember
         if let editedMemberID {
@@ -269,15 +383,36 @@ struct LocationDetailSheet: View {
             targetMember = service.createFamilyMember(name: editedNewMemberName)
         }
         
-        service.updateLocation(
-            record: record,
-            cityName: editedCityName,
-            latitude: lat,
-            longitude: lon,
-            timestamp: editedTimestamp,
-            note: editedNote,
-            newMember: targetMember
-        )
+        switch inputSource {
+        case .preset:
+            guard let location = selectedSavedLocation else { return }
+            record.cityName = location.name
+            record.latitude = location.latitude
+            record.longitude = location.longitude
+            record.savedLocation = location
+        case .manual:
+            guard let lat = manualLatitude, let lon = manualLongitude else { return }
+            record.cityName = cityName.trimmingCharacters(in: .whitespacesAndNewlines)
+            record.latitude = lat
+            record.longitude = lon
+            record.savedLocation = nil
+        }
+        
+        record.timestamp = editedTimestamp
+        record.note = editedNote
+        
+        if record.member?.id != targetMember.id {
+            if let oldMember = record.member {
+                oldMember.locations?.removeAll(where: { $0.id == record.id })
+            }
+            record.member = targetMember
+            if targetMember.locations == nil {
+                targetMember.locations = []
+            }
+            targetMember.locations?.append(record)
+        }
+        
+        try? modelContext.save()
         
         isEditing = false
     }

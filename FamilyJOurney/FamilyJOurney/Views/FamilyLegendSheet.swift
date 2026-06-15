@@ -52,19 +52,7 @@ struct FamilyLegendSheet: View {
                                 Toggle(isOn: isVisibleBinding) {
                                     HStack(spacing: 12) {
                                         // Display member image or fallback emoji in a styled circular background matching their route color
-                                        if let avatarData = member.avatarImageData, let uiImage = UIImage(data: avatarData) {
-                                            Image(uiImage: uiImage)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 36, height: 36)
-                                                .clipShape(Circle())
-                                                .overlay(Circle().stroke(member.color, lineWidth: 1.5))
-                                        } else {
-                                            Text(member.emoji)
-                                                .font(.system(size: 24))
-                                                .padding(6)
-                                                .background(Circle().fill(member.color.opacity(0.15)))
-                                        }
+                                        MemberAvatarView(member: member, size: 36, borderWidth: 1.5)
                                         
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(member.name)
@@ -102,6 +90,7 @@ struct FamilyLegendSheet: View {
             }
             .navigationTitle("Journey Legend")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
@@ -120,9 +109,17 @@ struct FamilyLegendSheet: View {
             }
             .sheet(isPresented: $isShowingAddMember) {
                 AddMemberSheet()
+                    .presentationDetents([.large])
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(30)
+                    .presentationDragIndicator(.visible)
             }
             .sheet(item: $editingMember) { member in
                 EditMemberSheet(member: member)
+                    .presentationDetents([.large])
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(30)
+                    .presentationDragIndicator(.visible)
             }
         }
     }

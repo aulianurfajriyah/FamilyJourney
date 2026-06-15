@@ -17,6 +17,9 @@ final class LocationRecord {
     // The relationship linking this location record to its family member owner.
     var member: FamilyMember?
 
+    // The relationship linking this location record to its predefined saved location.
+    var savedLocation: SavedLocation?
+
     // The city name is shown in marker detail UI.
     var cityName: String = ""
 
@@ -39,7 +42,8 @@ final class LocationRecord {
         latitude: Double = 0.0,
         longitude: Double = 0.0,
         timestamp: Date = Date(),
-        note: String = ""
+        note: String = "",
+        savedLocation: SavedLocation? = nil
     ) {
         self.id = id
         self.cityName = cityName
@@ -47,5 +51,6 @@ final class LocationRecord {
         self.longitude = longitude
         self.timestamp = timestamp
         self.note = note
+        self.savedLocation = savedLocation
     }
 }
