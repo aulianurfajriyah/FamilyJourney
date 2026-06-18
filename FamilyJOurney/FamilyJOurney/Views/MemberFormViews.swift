@@ -9,43 +9,6 @@ import PhotosUI
 import SwiftData
 import SwiftUI
 
-#if canImport(UIKit)
-import UIKit
-
-extension UIImage {
-    func resized(to targetSize: CGSize) -> UIImage? {
-        let widthRatio  = targetSize.width  / size.width
-        let heightRatio = targetSize.height / size.height
-        
-        let scaleFactor = min(widthRatio, heightRatio)
-        let newSize = CGSize(width: size.width * scaleFactor, height: size.height * scaleFactor)
-        
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1.0
-        
-        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-        return renderer.image { _ in
-            self.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-    }
-}
-#endif
-
-// MARK: - Color Palette Mapping Helper
-func colorForName(_ name: String) -> Color {
-    switch name.lowercased() {
-    case "blue": return .blue
-    case "green": return .green
-    case "orange": return .orange
-    case "purple": return .purple
-    case "pink": return .pink
-    case "red": return .red
-    case "cyan": return .cyan
-    case "indigo": return .indigo
-    default: return .blue
-    }
-}
-
 // MARK: - Add Member Sheet
 struct AddMemberSheet: View {
     @Environment(\.modelContext) private var modelContext
@@ -66,9 +29,6 @@ struct AddMemberSheet: View {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private let colors = ["blue", "green", "orange", "purple", "pink", "red", "cyan", "indigo"]
-    private let popularEmojis = ["👩", "👨", "👧", "👦", "👵", "👴", "👩‍🦰", "👨‍🦱", "👱‍♀️", "👱‍♂️", "👶", "🐱", "🐶", "🦊", "🦁"]
-
     var body: some View {
         NavigationStack {
             Form {
@@ -78,105 +38,24 @@ struct AddMemberSheet: View {
                         .font(.body) // Dynamic Type compliance
                 }
 
-                Section("Avatar Photo (Memoji or Real Photo)") {
-                    HStack(spacing: 16) {
-                        MemberAvatarView(
-                            avatarImageData: avatarData,
-                            emoji: selectedEmoji,
-                            color: colorForName(selectedColorName),
-                            size: 70,
-                            showBorder: false
-                        )
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                                Label(avatarData == nil ? "Choose Photo" : "Change Photo", systemImage: "photo.on.rectangle.angled")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            .buttonStyle(.bordered)
-                            
-                            if avatarData != nil {
-                                Button(role: .destructive) {
-                                    avatarData = nil
-                                    selectedItem = nil
-                                } label: {
-                                    Label("Remove Photo", systemImage: "trash")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .onChange(of: selectedItem) { _, newItem in
-                        Task {
-                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                if let image = UIImage(data: data) {
-                                    let resizedImage = image.resized(to: CGSize(width: 256, height: 256))
-                                    if let compressedData = resizedImage?.pngData() ?? resizedImage?.jpegData(compressionQuality: 0.8) {
-                                        avatarData = compressedData
-                                    } else {
-                                        avatarData = data
-                                    }
-                                } else {
-                                    avatarData = data
-                                }
-                            }
-                        }
-                    }
-                }
+                AvatarPhotoSection(
+                    avatarData: $avatarData,
+                    selectedItem: $selectedItem,
+                    selectedEmoji: selectedEmoji,
+                    selectedColorName: selectedColorName
+                )
 
-                Section("Avatar Emoji (Fallback)") {
-                    // Emoji Picker Row
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(popularEmojis, id: \.self) { emoji in
-                                Text(emoji)
-                                    .font(.system(size: 32))
-                                    .padding(8)
-                                    .background(Circle().fill(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.clear))
-                                    .onTapGesture {
-                                        selectedEmoji = emoji
-                                    }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
+                AvatarEmojiSection(
+                    selectedEmoji: $selectedEmoji,
+                    customEmojiInput: $customEmojiInput
+                )
 
-                    TextField("Type custom emoji (optional)", text: $customEmojiInput)
-                        .autocorrectionDisabled()
-                        .font(.body) // Dynamic Type compliance
-                        .onChange(of: customEmojiInput) { _, newValue in
-                            // Restrict to last entered character to keep it a single emoji
-                            if let lastChar = newValue.last {
-                                selectedEmoji = String(lastChar)
-                                customEmojiInput = String(lastChar)
-                            }
-                        }
-                }
-
-                Section("Route Color") {
-                    HStack(spacing: 12) {
-                        ForEach(colors, id: \.self) { colorName in
-                            Circle()
-                                .fill(colorForName(colorName))
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.primary, lineWidth: selectedColorName == colorName ? 2.5 : 0)
-                                )
-                                .onTapGesture {
-                                    selectedColorName = colorName
-                                }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
+                RouteColorSection(
+                    selectedColorName: $selectedColorName
+                )
             }
             .navigationTitle("Add Family Member")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -228,9 +107,6 @@ struct EditMemberSheet: View {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private let colors = ["blue", "green", "orange", "purple", "pink", "red", "cyan", "indigo"]
-    private let popularEmojis = ["👩", "👨", "👧", "👦", "👵", "👴", "👩‍🦰", "👨‍🦱", "👱‍♀️", "👱‍♂️", "👶", "🐱", "🐶", "🦊", "🦁"]
-
     var body: some View {
         NavigationStack {
             Form {
@@ -240,104 +116,24 @@ struct EditMemberSheet: View {
                         .font(.body) // Dynamic Type compliance
                 }
 
-                Section("Avatar Photo (Memoji or Real Photo)") {
-                    HStack(spacing: 16) {
-                        MemberAvatarView(
-                            avatarImageData: avatarData,
-                            emoji: selectedEmoji,
-                            color: colorForName(selectedColorName),
-                            size: 70,
-                            showBorder: false
-                        )
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                                Label(avatarData == nil ? "Choose Photo" : "Change Photo", systemImage: "photo.on.rectangle.angled")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            .buttonStyle(.bordered)
-                            
-                            if avatarData != nil {
-                                Button(role: .destructive) {
-                                    avatarData = nil
-                                    selectedItem = nil
-                                } label: {
-                                    Label("Remove Photo", systemImage: "trash")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .onChange(of: selectedItem) { _, newItem in
-                        Task {
-                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                if let image = UIImage(data: data) {
-                                    let resizedImage = image.resized(to: CGSize(width: 256, height: 256))
-                                    if let compressedData = resizedImage?.pngData() ?? resizedImage?.jpegData(compressionQuality: 0.8) {
-                                        avatarData = compressedData
-                                    } else {
-                                        avatarData = data
-                                    }
-                                } else {
-                                    avatarData = data
-                                }
-                            }
-                        }
-                    }
-                }
+                AvatarPhotoSection(
+                    avatarData: $avatarData,
+                    selectedItem: $selectedItem,
+                    selectedEmoji: selectedEmoji,
+                    selectedColorName: selectedColorName
+                )
 
-                Section("Avatar Emoji (Fallback)") {
-                    // Emoji Picker Row
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(popularEmojis, id: \.self) { emoji in
-                                Text(emoji)
-                                    .font(.system(size: 32))
-                                    .padding(8)
-                                    .background(Circle().fill(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.clear))
-                                    .onTapGesture {
-                                        selectedEmoji = emoji
-                                    }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
+                AvatarEmojiSection(
+                    selectedEmoji: $selectedEmoji,
+                    customEmojiInput: $customEmojiInput
+                )
 
-                    TextField("Type custom emoji (optional)", text: $customEmojiInput)
-                        .autocorrectionDisabled()
-                        .font(.body) // Dynamic Type compliance
-                        .onChange(of: customEmojiInput) { _, newValue in
-                            if let lastChar = newValue.last {
-                                selectedEmoji = String(lastChar)
-                                customEmojiInput = String(lastChar)
-                            }
-                        }
-                }
-
-                Section("Route Color") {
-                    HStack(spacing: 12) {
-                        ForEach(colors, id: \.self) { colorName in
-                            Circle()
-                                .fill(colorForName(colorName))
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.primary, lineWidth: selectedColorName == colorName ? 2.5 : 0)
-                                )
-                                .onTapGesture {
-                                    selectedColorName = colorName
-                                }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
+                RouteColorSection(
+                    selectedColorName: $selectedColorName
+                )
             }
             .navigationTitle("Edit Family Member")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

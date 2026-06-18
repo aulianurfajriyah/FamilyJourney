@@ -87,13 +87,17 @@ struct MemberAvatarStackView: View {
                     .font(.system(size: avatarSize * 0.35, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: avatarSize, height: avatarSize)
-                    .background(Circle().fill(Color.gray))
-                    .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                    .background(Circle().fill(Color.gray.opacity(0.8)))
+                    .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1.5))
                     .shadow(color: Color.black.opacity(0.15), radius: 2, x: 0, y: 1)
             }
         }
         .padding(4)
-        .background(Capsule().fill(Color(uiColor: .systemBackground)))
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(
+            Capsule()
+                .stroke(.white.opacity(0.4), lineWidth: 1)
+        )
         .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
     }
 }

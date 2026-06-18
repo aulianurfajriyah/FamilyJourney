@@ -88,9 +88,8 @@ struct FamilyLegendSheet: View {
                     }
                 }
             }
-            .navigationTitle("Journey Legend")
+            .navigationTitle("Family Member")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden) // Liquid glass styling
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
@@ -109,16 +108,12 @@ struct FamilyLegendSheet: View {
             }
             .sheet(isPresented: $isShowingAddMember) {
                 AddMemberSheet()
-                    .presentationDetents([.large])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
+                    .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             }
             .sheet(item: $editingMember) { member in
                 EditMemberSheet(member: member)
                     .presentationDetents([.large])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
                     .presentationDragIndicator(.visible)
             }
         }

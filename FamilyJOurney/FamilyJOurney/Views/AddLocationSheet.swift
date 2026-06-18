@@ -70,21 +70,11 @@ struct AddLocationSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Family Member") {
-                    Picker("Select Member", selection: $selectedMemberID) {
-                        Text("Add New Member...").tag(nil as UUID?)
-                        ForEach(members) { member in
-                            Text(member.name).tag(member.id as UUID?)
-                        }
-                    }
-                    .font(.body) // Dynamic Type compliance
-                    
-                    if selectedMemberID == nil {
-                        TextField("New Member Name", text: $newMemberName)
-                            .autocorrectionDisabled()
-                            .font(.body) // Dynamic Type compliance
-                    }
-                }
+                MemberSelectionSection(
+                    selectedMemberID: $selectedMemberID,
+                    newMemberName: $newMemberName,
+                    members: members
+                )
 
                 Section("Location Details") {
                     Picker("Input Source", selection: $inputSource) {
@@ -95,106 +85,19 @@ struct AddLocationSheet: View {
                     .pickerStyle(.segmented)
                     
                     if inputSource == .preset {
-                        if savedLocations.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("No saved locations available.")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                
-                                Button(action: { isShowingManagePresets = true }) {
-                                    Label("Manage Preset Locations", systemImage: "mappin.circle.fill")
-                                        .font(.body)
-                                        .fontWeight(.semibold)
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                            .padding(.vertical, 4)
-                        } else {
-                            HStack {
-                                Picker("Select Place", selection: $selectedSavedLocationID) {
-                                    Text("Choose location...").tag(nil as UUID?)
-                                    ForEach(savedLocations) { location in
-                                        Text(location.name).tag(location.id as UUID?)
-                                    }
-                                }
-                                .font(.body)
-                                .onChange(of: selectedSavedLocationID) { _, _ in
-                                    updateMapCamera()
-                                }
-                                
-                                Button(action: { isShowingManagePresets = true }) {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.title3)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-
-                            if let selectedLocation = selectedSavedLocation {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Coordinates: \(String(format: "%.4f, %.4f", selectedLocation.latitude, selectedLocation.longitude))")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-
-                                    Map(position: $mapCameraPosition) {
-                                        Marker(selectedLocation.name, coordinate: CLLocationCoordinate2D(latitude: selectedLocation.latitude, longitude: selectedLocation.longitude))
-                                    }
-                                    .frame(height: 200)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                    )
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
+                        PresetLocationSection(
+                            selectedSavedLocationID: $selectedSavedLocationID,
+                            isShowingManagePresets: $isShowingManagePresets,
+                            mapCameraPosition: $mapCameraPosition,
+                            savedLocations: savedLocations
+                        )
                     } else {
-                        TextField("City Name (e.g. Bandung)", text: $cityName)
-                            .autocorrectionDisabled()
-                            .font(.body)
-
-                        TextField("Latitude (e.g. -6.9175)", text: $latitudeString)
-                            .keyboardType(.numbersAndPunctuation)
-                            .autocorrectionDisabled()
-                            .font(.body)
-                            .onChange(of: latitudeString) { _, _ in
-                                updateManualMapCamera()
-                            }
-
-                        TextField("Longitude (e.g. 107.6191)", text: $longitudeString)
-                            .keyboardType(.numbersAndPunctuation)
-                            .autocorrectionDisabled()
-                            .font(.body)
-                            .onChange(of: longitudeString) { _, _ in
-                                updateManualMapCamera()
-                            }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Or tap on the map to choose coordinates:")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            
-                            MapReader { proxy in
-                                Map(position: $mapCameraPosition) {
-                                    if let lat = manualLatitude, let lon = manualLongitude {
-                                        Marker(cityName.isEmpty ? "Selected" : cityName, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-                                    }
-                                }
-                                .frame(height: 200)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
-                                .onTapGesture { position in
-                                    if let coordinate = proxy.convert(position, from: .local) {
-                                        latitudeString = String(format: "%.6f", coordinate.latitude)
-                                        longitudeString = String(format: "%.6f", coordinate.longitude)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 8)
+                        ManualLocationSection(
+                            cityName: $cityName,
+                            latitudeString: $latitudeString,
+                            longitudeString: $longitudeString,
+                            mapCameraPosition: $mapCameraPosition
+                        )
                     }
                 }
 
@@ -206,17 +109,13 @@ struct AddLocationSheet: View {
                 Section("Notes (Optional)") {
                     TextField("Add notes about this trip...", text: $note, axis: .vertical)
                         .font(.body) // Dynamic Type compliance
-                        .lineLimit(3...5)
                 }
             }
             .navigationTitle("Add Journey Stop")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden) // Liquid glass styling
             .sheet(isPresented: $isShowingManagePresets) {
                 ManageSavedLocationsSheet()
                     .presentationDetents([.medium, .large])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
                     .presentationDragIndicator(.visible)
             }
             .toolbar {

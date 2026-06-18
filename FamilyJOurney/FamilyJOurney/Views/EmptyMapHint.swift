@@ -26,8 +26,13 @@ struct EmptyMapHint: View {
             Button("Add Location Stop", action: addLocationAction)
                 .buttonStyle(.borderedProminent)
         }
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.35), lineWidth: 1.5)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 8)
     }
 }

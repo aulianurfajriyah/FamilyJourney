@@ -5,6 +5,7 @@
 //  Created by Aulia Nur Fajriyah on 10/06/26.
 //
 
+import Combine
 import CoreLocation
 import MapKit
 import SwiftData
@@ -26,6 +27,15 @@ struct FamilyMapScreen: View {
 
     // This state stores the selected marker ID and is bound directly to MapKit's selection system.
     @State private var selectedRecordID: UUID?
+    
+    // Time-lapse simulation state
+    @State private var isTimelapseActive = false
+    @State private var timelapseStartDate = Date()
+    @State private var timelapseEndDate = Date()
+    @State private var timelapseCurrentDate = Date()
+
+    // Track record mode state (displays travel history via polylines & historical markers)
+    @State private var isTrackRecordActive = false
 
     // This state controls whether the marker detail sheet is visible after a marker tap.
     @State private var isShowingLocationDetails = false
@@ -43,18 +53,25 @@ struct FamilyMapScreen: View {
     var body: some View {
         NavigationStack {
             Map(position: $cameraPosition, selection: $selectedRecordID) {
-                journeyPolylines
-                locationMarkers
+                JourneyPolylinesContent(isTrackRecordActive: isTrackRecordActive, journeyGroups: journeyGroups)
+                LocationMarkersContent(clusters: clusters)
             }
             .mapControls {
                 MapCompass()
                 MapScaleView()
-                MapUserLocationButton()
+              //  MapUserLocationButton()
             }
             .navigationTitle("Family Journey")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                mapToolbar
+                FamilyMapToolbar(
+                    hasLocationRecords: !locationRecords.isEmpty,
+                    isTrackRecordActive: $isTrackRecordActive,
+                    isTimelapseActive: $isTimelapseActive,
+                    isShowingAddLocationSheet: $isShowingAddLocationSheet,
+                    isShowingLegendSheet: $isShowingLegendSheet,
+                    onFit: { fitCameraToSavedLocations() }
+                )
             }
             .onChange(of: selectedRecordID) { _, newValue in
                 isShowingLocationDetails = newValue != nil
@@ -65,22 +82,16 @@ struct FamilyMapScreen: View {
             .sheet(isPresented: $isShowingLocationDetails) {
                 LocationDetailSheet(record: selectedRecord)
                     .presentationDetents([.medium])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isShowingAddLocationSheet) {
                 AddLocationSheet()
                     .presentationDetents([.large])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isShowingLegendSheet) {
                 FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
                     .presentationDetents([.medium, .large])
-                    .presentationBackground(.ultraThinMaterial)
-                    .presentationCornerRadius(30)
                     .presentationDragIndicator(.visible)
             }
             .onChange(of: hiddenMemberIDs) { _, _ in
@@ -92,8 +103,68 @@ struct FamilyMapScreen: View {
                         isShowingAddLocationSheet = true
                     }
                     .padding()
+                } else if isTimelapseActive {
+                    TimelapsePanel(
+                        isTimelapseActive: $isTimelapseActive,
+                        timelapseStartDate: $timelapseStartDate,
+                        timelapseEndDate: $timelapseEndDate,
+                        timelapseCurrentDate: $timelapseCurrentDate,
+                        locationRecords: locationRecords
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
                 }
             }
+        }
+    }
+
+    // Filtered records reflecting the active legend selections and the time-lapse slider limit if active.
+    private var filteredRecords: [LocationRecord] {
+        let baseRecords = locationRecords.filter { record in
+            if let member = record.member {
+                return !hiddenMemberIDs.contains(member.id)
+            }
+            return true
+        }
+        
+        if isTimelapseActive {
+            return baseRecords.filter { record in
+                record.timestamp >= timelapseStartDate && record.timestamp <= timelapseCurrentDate
+            }
+        }
+        
+        return baseRecords
+    }
+
+    // Latest location record for each non-hidden member.
+    private var latestMemberRecords: [LocationRecord] {
+        let baseRecords = locationRecords.filter { record in
+            if let member = record.member {
+                return !hiddenMemberIDs.contains(member.id)
+            }
+            return true
+        }
+        
+        let grouped = Dictionary(grouping: baseRecords) { $0.member?.id }
+        return grouped.values.compactMap { records in
+            records.max(by: { $0.timestamp < $1.timestamp })
+        }
+    }
+
+    // Latest check-in for each member up to the current simulated date during time-lapse mode.
+    private var activeTimelapseMarkers: [LocationRecord] {
+        let activeRecords = locationRecords.filter { record in
+            if let member = record.member {
+                return !hiddenMemberIDs.contains(member.id) &&
+                       record.timestamp >= timelapseStartDate &&
+                       record.timestamp <= timelapseCurrentDate
+            }
+            return false
+        }
+        
+        let grouped = Dictionary(grouping: activeRecords) { $0.member?.id }
+        return grouped.values.compactMap { records in
+            records.max(by: { $0.timestamp < $1.timestamp })
         }
     }
 
@@ -102,87 +173,30 @@ struct FamilyMapScreen: View {
         locationRecords.first { $0.id == selectedRecordID }
     }
 
-    // This builder turns grouped SwiftData records into route overlays on the map.
-    @MapContentBuilder
-    private var journeyPolylines: some MapContent {
-        ForEach(journeyGroups) { group in
-            MapPolyline(coordinates: group.coordinates)
-                .stroke(group.color, lineWidth: 4)
+    // The records to show on the map depending on active modes (timelapse, track record, or default latest).
+    private var recordsToCluster: [LocationRecord] {
+        if isTimelapseActive {
+            return activeTimelapseMarkers
+        } else if isTrackRecordActive {
+            return filteredRecords
+        } else {
+            return latestMemberRecords
         }
     }
 
-    // This builder turns each SwiftData LocationRecord into one/grouped map annotations.
-    @MapContentBuilder
-    private var locationMarkers: some MapContent {
-        let visibleRecords = locationRecords.filter { record in
-            if let member = record.member {
-                return !hiddenMemberIDs.contains(member.id)
-            }
-            return true
-        }
-
-        let clusters = clusterLocations(visibleRecords)
-
-        ForEach(clusters) { cluster in
-            let uniqueMembers = Array(Set(cluster.records.compactMap { $0.member }))
-                .sorted(by: { $0.name < $1.name })
-            
-            let latestRecord = cluster.records.max(by: { $0.timestamp < $1.timestamp }) ?? cluster.records[0]
-            
-            let annotationTitle = cluster.records.count == 1 
-                ? latestRecord.cityName 
-                : "\(cluster.records.count) stops (\(latestRecord.cityName))"
-
-            Annotation(annotationTitle, coordinate: cluster.coordinate) {
-                VStack(spacing: 4) {
-                    if uniqueMembers.count == 1, let member = uniqueMembers.first {
-                        MemberAvatarView(member: member, size: 38, borderWidth: 3)
-                            .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 2)
-                    } else {
-                        MemberAvatarStackView(members: uniqueMembers, avatarSize: 32)
-                    }
-                }
-            }
-            .tag(latestRecord.id)
-        }
+    private var clusters: [LocationCluster] {
+        clusterLocations(recordsToCluster)
     }
 
-    // The toolbar keeps map actions near the map while leaving the main body readable.
-    @ToolbarContentBuilder
-    private var mapToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button("Fit") {
-                fitCameraToSavedLocations()
-            }
-            .disabled(locationRecords.isEmpty)
-        }
 
-        ToolbarItemGroup(placement: .topBarTrailing) {
-          
-            Button {
-                isShowingAddLocationSheet = true
-            } label: {
-                Label("Add Location", systemImage: "plus")
-            }
-            Button {
-                isShowingLegendSheet = true
-            } label: {
-                Label("Legend", systemImage: "line.3.horizontal.decrease.circle")
-            }
-        }
-
-        
-    }
 
     // Journey groups convert raw SwiftData records into MapKit-friendly polyline inputs.
     private var journeyGroups: [JourneyGroup] {
-        let groupedRecords = Dictionary(grouping: locationRecords) { record in
+        let groupedRecords = Dictionary(grouping: filteredRecords) { record in
             record.member
         }
 
-        // Filter out members that are currently hidden by the user.
         let visibleMembers = groupedRecords.keys.compactMap { $0 }
-            .filter { !hiddenMemberIDs.contains($0.id) }
 
         return visibleMembers.sorted(by: { $0.name < $1.name }).compactMap { member in
             guard let records = groupedRecords[member] else {
@@ -221,12 +235,7 @@ struct FamilyMapScreen: View {
         span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
     )
 
-    // Location clustering structure
-    private struct LocationCluster: Identifiable {
-        let id: UUID
-        let coordinate: CLLocationCoordinate2D
-        let records: [LocationRecord]
-    }
+
 
     // Cluster location records within a specific radius in meters
     private func clusterLocations(_ records: [LocationRecord], radiusMeters: Double = 50.0) -> [LocationCluster] {
@@ -242,14 +251,17 @@ struct FamilyMapScreen: View {
                 let existingCluster = clusters[index]
                 var updatedRecords = existingCluster.records
                 updatedRecords.append(record)
+                
+                let stableId = generateStableClusterId(for: updatedRecords)
                 clusters[index] = LocationCluster(
-                    id: existingCluster.id,
+                    id: stableId,
                     coordinate: existingCluster.coordinate,
                     records: updatedRecords
                 )
             } else {
+                let stableId = generateStableClusterId(for: [record])
                 clusters.append(LocationCluster(
-                    id: UUID(),
+                    id: stableId,
                     coordinate: record.coordinate,
                     records: [record]
                 ))
@@ -258,6 +270,20 @@ struct FamilyMapScreen: View {
         
         return clusters
     }
+
+    private func generateStableClusterId(for records: [LocationRecord]) -> String {
+        if isTimelapseActive {
+            // Use member IDs so identity is tied to the moving member
+            let memberIds = records.compactMap { $0.member?.id.uuidString }
+            return memberIds.sorted().joined(separator: "-")
+        } else {
+            // Use record IDs
+            let recordIds = records.map { $0.id.uuidString }
+            return recordIds.sorted().joined(separator: "-")
+        }
+    }
+
+
 }
 
 #Preview {

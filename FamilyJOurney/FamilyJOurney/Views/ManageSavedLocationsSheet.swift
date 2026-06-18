@@ -76,11 +76,12 @@ struct ManageSavedLocationsSheet: View {
                                 }
                             }
                             .frame(height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(.white.opacity(0.4), lineWidth: 1.5)
                             )
+                            .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 3)
                             .onTapGesture { position in
                                 if let coordinate = proxy.convert(position, from: .local) {
                                     latitudeString = String(format: "%.6f", coordinate.latitude)
@@ -135,7 +136,6 @@ struct ManageSavedLocationsSheet: View {
             }
             .navigationTitle("Manage Saved Locations")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollContentBackground(.hidden) // Liquid glass styling compliance
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
