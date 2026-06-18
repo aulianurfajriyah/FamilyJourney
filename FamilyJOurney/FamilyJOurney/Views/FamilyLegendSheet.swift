@@ -70,14 +70,14 @@ struct FamilyLegendSheet: View {
                                     Button(role: .destructive) {
                                         memberService.deleteMember(member: member)
                                     } label: {
-                                        Label("Delete", systemImage: "trash")
+                                        Image(systemName: "trash")
                                     }
                                 }
                                 .swipeActions(edge: .leading) {
                                     Button {
                                         editingMember = member
                                     } label: {
-                                        Label("Edit", systemImage: "pencil")
+                                        Image(systemName: "pencil")
                                     }
                                     .tint(.blue)
                                 }

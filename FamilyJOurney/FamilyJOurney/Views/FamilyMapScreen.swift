@@ -48,26 +48,68 @@ struct FamilyMapScreen: View {
 
     // Stores the IDs of family members whose journeys are currently hidden.
     @State private var hiddenMemberIDs: Set<UUID> = []
+    
+    @Namespace private var mapScope
 
     // The body renders the map first, because the map is the main learning surface for this screen.
     var body: some View {
         NavigationStack {
-            Map(position: $cameraPosition, selection: $selectedRecordID) {
+            Map(position: $cameraPosition, selection: $selectedRecordID, scope: mapScope) {
                 JourneyPolylinesContent(isTrackRecordActive: isTrackRecordActive, journeyGroups: journeyGroups)
                 LocationMarkersContent(clusters: clusters)
             }
+            .mapScope(mapScope)
             .mapControls {
-                MapCompass()
                 MapScaleView()
               //  MapUserLocationButton()
+            }
+            .overlay(alignment: .topTrailing) {
+                VStack(spacing: 12) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isTrackRecordActive.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isTrackRecordActive ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isTrackRecordActive ? .accentColor : .primary)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(isTrackRecordActive ? Color.accentColor.opacity(0.25) : Color.clear)
+                            )
+                            .glassEffect()
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isTimelapseActive.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isTimelapseActive ? "clock.fill" : "clock")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isTimelapseActive ? .accentColor : .primary)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(isTimelapseActive ? Color.accentColor.opacity(0.25) : Color.clear)
+                            )
+                            .glassEffect()
+                    }
+                    .buttonStyle(.plain)
+                    
+                    MapCompass(scope: mapScope)
+                        .mapControlVisibility(.automatic)
+                }
+                .padding(.trailing, 16)
+                .padding(.top, 12)
             }
             .navigationTitle("Family Journey")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 FamilyMapToolbar(
                     hasLocationRecords: !locationRecords.isEmpty,
-                    isTrackRecordActive: $isTrackRecordActive,
-                    isTimelapseActive: $isTimelapseActive,
                     isShowingAddLocationSheet: $isShowingAddLocationSheet,
                     isShowingLegendSheet: $isShowingLegendSheet,
                     onFit: { fitCameraToSavedLocations() }

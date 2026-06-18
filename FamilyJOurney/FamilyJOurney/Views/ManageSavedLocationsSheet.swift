@@ -127,7 +127,7 @@ struct ManageSavedLocationsSheet: View {
                                 Button(role: .destructive) {
                                     deleteLocation(location)
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Image(systemName: "trash")
                                 }
                             }
                         }
