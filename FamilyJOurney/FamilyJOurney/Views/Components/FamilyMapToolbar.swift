@@ -9,10 +9,9 @@ import SwiftUI
 
 struct FamilyMapToolbar: ToolbarContent {
     let hasLocationRecords: Bool
-    
-    @Binding var isShowingAddLocationSheet: Bool
+
+    var onAddLocation: () -> Void
     @Binding var isShowingLegendSheet: Bool
-    
     var onFit: () -> Void
 
     var body: some ToolbarContent {
@@ -25,11 +24,11 @@ struct FamilyMapToolbar: ToolbarContent {
 
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
-                isShowingAddLocationSheet = true
+                onAddLocation()
             } label: {
                 Label("Add Location", systemImage: "plus")
             }
-            
+
             Button {
                 isShowingLegendSheet = true
             } label: {

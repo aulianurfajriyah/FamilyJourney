@@ -11,496 +11,297 @@ import SwiftData
 import SwiftUI
 
 // FamilyMapScreen owns the SwiftData query, MapKit camera state, and marker selection state.
+// Business logic is split across:
+//   • FamilyMapScreen+DataLogic.swift  – computed properties, clustering, camera helpers
+//   • FamilyMapScreen+Search.swift     – search results and flyTo helpers
+// UI sub-components live in Views/Components/:
+//   • MapUtilityButtons.swift          – top-trailing button cluster
+//   • LongPressAlertOverlay.swift      – long-press action card
+//   • FamilyMapToolbar.swift           – navigation bar buttons
 struct FamilyMapScreen: View {
-    // @Query asks SwiftData for all LocationRecord objects and refreshes this view whenever they change.
-    @Query(sort: \LocationRecord.timestamp) private var locationRecords: [LocationRecord]
 
-    // Querying members forces the map screen to refresh when any member's color, emoji, or name is updated.
-    @Query(sort: \FamilyMember.name) private var members: [FamilyMember]
+    // MARK: - SwiftData Queries
 
-    // The model context is the write gateway for inserting sample records during this learning MVP.
+    /// All location records, sorted oldest-first so polylines draw in chronological order.
+    @Query(sort: \LocationRecord.timestamp) var locationRecords: [LocationRecord]
+
+    /// Querying members forces a re-render whenever name/color/emoji changes.
+    @Query(sort: \FamilyMember.name) var members: [FamilyMember]
+
+    /// Saved preset locations used for search.
+    @Query(sort: \SavedLocation.name) var savedLocations: [SavedLocation]
+
+    // MARK: - Environment
+
     @Environment(\.modelContext) private var modelContext
 
-    // This state stores the current MapKit camera position and is bound directly to the Map view.
-    @State private var cameraPosition: MapCameraPosition = .region(Self.defaultRegion)
+    // MARK: - Map State
 
-    // This state stores the selected marker ID and is bound directly to MapKit's selection system.
-    @State private var selectedRecordID: UUID?
-    
-    // Time-lapse simulation state
-    @State private var isTimelapseActive = false
-    @State private var timelapseStartDate = Date()
-    @State private var timelapseEndDate = Date()
-    @State private var timelapseCurrentDate = Date()
+    @State var cameraPosition: MapCameraPosition = .region(Self.defaultRegion)
+    @State var selectedRecordID: UUID?
+    @Namespace var mapScope
 
-    // Track record mode state (displays travel history via polylines & historical markers)
-    @State private var isTrackRecordActive = false
+    // MARK: - Mode Toggles
 
-    // This state controls whether the marker detail sheet is visible after a marker tap.
+    @State var isTrackRecordActive = false
+
+    // Timelapse
+    @State var isTimelapseActive = false
+    @State var timelapseStartDate = Date()
+    @State var timelapseEndDate = Date()
+    @State var timelapseCurrentDate = Date()
+
+    // Hidden members (legend filter)
+    @State var hiddenMemberIDs: Set<UUID> = []
+
+    // MARK: - Sheet Context
+
+    struct AddLocationSheetContext: Identifiable {
+        let id = UUID()
+        let coordinate: CLLocationCoordinate2D?
+    }
+
+    struct PresetLocationSheetContext: Identifiable {
+        let id = UUID()
+        let coordinate: CLLocationCoordinate2D?
+    }
+
     @State private var isShowingLocationDetails = false
-
-    // This state controls whether the manual location entry sheet is visible.
-    @State private var isShowingAddLocationSheet = false
-
-    // This state controls whether the journey legend sheet is visible.
     @State private var isShowingLegendSheet = false
+    @State private var addLocationContext: AddLocationSheetContext? = nil
+    @State private var presetLocationContext: PresetLocationSheetContext? = nil
 
-    // Stores the IDs of family members whose journeys are currently hidden.
-    @State private var hiddenMemberIDs: Set<UUID> = []
-    
-    // Querying saved locations for search
-    @Query(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
-    
-    // Search states
-    @State private var searchText = ""
-    @State private var sheetPosition: SearchSheetPosition = .collapsed
+    // MARK: - Long-Press State
+
+    /// A single optional drives the long-press alert. Using one variable instead of
+    /// two (a Bool + an optional coordinate) avoids the flicker race condition.
+    @State var longPressAlertCoordinate: CLLocationCoordinate2D? = nil
+
+    // MARK: - Search State
+
+    @State var searchText = ""
+    @State var sheetPosition: SearchSheetPosition = .collapsed
     @State private var isShowingManagePresets = false
     @FocusState private var isSearchFieldFocused: Bool
     @StateObject private var searchCompleter = MapSearchCompleter()
-    
-    @Namespace private var mapScope
 
-    // The body renders the map first, because the map is the main learning surface for this screen.
+    // MARK: - Body
+
     var body: some View {
         NavigationStack {
-            Map(position: $cameraPosition, selection: $selectedRecordID, scope: mapScope) {
-                JourneyPolylinesContent(isTrackRecordActive: isTrackRecordActive, journeyGroups: journeyGroups)
-                LocationMarkersContent(clusters: clusters)
-            }
-            .mapScope(mapScope)
-            .mapControls {
-                MapScaleView()
-              //  MapUserLocationButton()
-            }
-            .overlay(alignment: .topTrailing) {
-                VStack(spacing: 12) {
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isTrackRecordActive.toggle()
-                        }
-                    } label: {
-                        Image(systemName: isTrackRecordActive ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(isTrackRecordActive ? .accentColor : .primary)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(isTrackRecordActive ? Color.accentColor.opacity(0.25) : Color.clear)
-                            )
-                            .glassEffect()
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isTimelapseActive.toggle()
-                        }
-                    } label: {
-                        Image(systemName: isTimelapseActive ? "clock.fill" : "clock")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(isTimelapseActive ? .accentColor : .primary)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(isTimelapseActive ? Color.accentColor.opacity(0.25) : Color.clear)
-                            )
-                            .glassEffect()
-                    }
-                    .buttonStyle(.plain)
-                    
-                    MapCompass(scope: mapScope)
-                        .mapControlVisibility(.automatic)
+            mapLayer
+                .overlay(alignment: .topTrailing) {
+                    MapUtilityButtons(
+                        isTrackRecordActive: $isTrackRecordActive,
+                        isTimelapseActive: $isTimelapseActive,
+                        mapScope: mapScope
+                    )
                 }
-                .padding(.trailing, 16)
-                .padding(.top, 12)
-            }
-            .navigationTitle("Family Journey")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                FamilyMapToolbar(
-                    hasLocationRecords: !locationRecords.isEmpty,
-                    isShowingAddLocationSheet: $isShowingAddLocationSheet,
-                    isShowingLegendSheet: $isShowingLegendSheet,
-                    onFit: { fitCameraToSavedLocations() }
-                )
-            }
-            .onChange(of: selectedRecordID) { _, newValue in
-                isShowingLocationDetails = newValue != nil
-            }
-            .onChange(of: locationRecords.map(\.id)) { _, _ in
-                fitCameraToSavedLocations()
-            }
-            .background(
-                ZStack {
-                    Color.clear
-                        .sheet(isPresented: $isShowingLocationDetails) {
-                            LocationDetailSheet(record: selectedRecord)
-                                .presentationDetents([.medium])
-                                .presentationDragIndicator(.visible)
-                        }
-                    Color.clear
-                        .sheet(isPresented: $isShowingAddLocationSheet) {
-                            AddLocationSheet()
-                                .presentationDetents([.large])
-                                .presentationDragIndicator(.visible)
-                        }
-                    Color.clear
-                        .sheet(isPresented: $isShowingLegendSheet) {
-                            FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
-                                .presentationDetents([.medium, .large])
-                                .presentationDragIndicator(.visible)
-                        }
-                    Color.clear
-                        .sheet(isPresented: $isShowingManagePresets) {
-                            ManageSavedLocationsSheet()
-                                .presentationDetents([.medium, .large])
-                                .presentationDragIndicator(.visible)
-                        }
+                .overlay(alignment: .bottom) { bottomOverlay }
+                .navigationTitle("Family Journey")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    FamilyMapToolbar(
+                        hasLocationRecords: !locationRecords.isEmpty,
+                        onAddLocation: { addLocationContext = AddLocationSheetContext(coordinate: nil) },
+                        isShowingLegendSheet: $isShowingLegendSheet,
+                        onFit: { fitCameraToSavedLocations() }
+                    )
                 }
-            )
-            .sheet(isPresented: Binding(
-                get: { !locationRecords.isEmpty && !isTimelapseActive },
-                set: { _ in }
-            )) {
-                SearchBottomSheet(
-                    searchText: $searchText,
-                    sheetPosition: $sheetPosition,
-                    isShowingManagePresets: $isShowingManagePresets,
-                    isSearchFieldFocused: $isSearchFieldFocused,
-                    searchCompleter: searchCompleter,
-                    savedLocations: savedLocations,
-                    searchResults: searchResults,
-                    members: members,
-                    onSelectResult: { item in
-                        if item.subtitle == "fit_all" {
-                            fitCameraToSavedLocations()
-                            withAnimation {
-                                sheetPosition = .collapsed
-                            }
-                        } else {
-                            flyTo(item)
+                .background(sheetBackground)
+                .sheet(isPresented: Binding(
+                    get: { !locationRecords.isEmpty && !isTimelapseActive },
+                    set: { _ in }
+                )) { searchSheet }
+                .onChange(of: selectedRecordID) { _, newValue in
+                    isShowingLocationDetails = newValue != nil
+                }
+                .onChange(of: locationRecords.map(\.id)) { _, _ in
+                    fitCameraToSavedLocations()
+                }
+                .onChange(of: hiddenMemberIDs) { _, _ in
+                    fitCameraToSavedLocations()
+                }
+                .onChange(of: isSearchFieldFocused) { _, isFocused in
+                    if isFocused {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            sheetPosition = .medium
+                        }
+                    }
+                }
+                .onChange(of: searchText) { _, newValue in
+                    searchCompleter.updateQuery(newValue)
+                    if !newValue.isEmpty {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            sheetPosition = .large
+                        }
+                    }
+                }
+                .onChange(of: isShowingManagePresets) { _, newValue in
+                    if newValue && presetLocationContext == nil {
+                        presetLocationContext = PresetLocationSheetContext(coordinate: nil)
+                    }
+                }
+                .onChange(of: presetLocationContext == nil) { _, isNil in
+                    if isNil { isShowingManagePresets = false }
+                }
+        }
+    }
+
+    // MARK: - Map Layer
+
+    /// The full-screen map wrapped in a MapReader for long-press coordinate conversion.
+    private var mapLayer: some View {
+        ZStack {
+            MapReader { mapProxy in
+                Map(position: $cameraPosition, selection: $selectedRecordID, scope: mapScope) {
+                    JourneyPolylinesContent(
+                        isTrackRecordActive: isTrackRecordActive,
+                        journeyGroups: journeyGroups
+                    )
+                    LocationMarkersContent(clusters: clusters)
+                }
+                .mapScope(mapScope)
+                .mapControls { MapScaleView() }
+                .simultaneousGesture(longPressGesture(proxy: mapProxy))
+            }
+
+            // Long-press action card
+            if let coordinate = longPressAlertCoordinate {
+                LongPressAlertOverlay(
+                    coordinate: coordinate,
+                    onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            longPressAlertCoordinate = nil
                         }
                     },
-                    onSelectCompletion: { completion in
-                        flyTo(completion)
+                    onAddStop: { coord in
+                        withAnimation(.easeInOut(duration: 0.15)) { longPressAlertCoordinate = nil }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            addLocationContext = AddLocationSheetContext(coordinate: coord)
+                        }
+                    },
+                    onSavePreset: { coord in
+                        withAnimation(.easeInOut(duration: 0.15)) { longPressAlertCoordinate = nil }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            presetLocationContext = PresetLocationSheetContext(coordinate: coord)
+                        }
                     }
                 )
-                .padding(sheetPosition == .collapsed ? 0 : 10)
-                .presentationDetents([.height(80), .medium, .large], selection: nativeDetentBinding)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .interactiveDismissDisabled()
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(50)
-                .presentationBackground(.clear)
-            }
-            .onChange(of: hiddenMemberIDs) { _, _ in
-                fitCameraToSavedLocations()
-            }
-            .onChange(of: isSearchFieldFocused) { _, isFocused in
-                if isFocused {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        sheetPosition = .medium
-                    }
-                }
-            }
-            .onChange(of: searchText) { _, newValue in
-                searchCompleter.updateQuery(newValue)
-                if !newValue.isEmpty {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        sheetPosition = .large
-                    }
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if locationRecords.isEmpty {
-                    EmptyMapHint {
-                        isShowingAddLocationSheet = true
-                    }
-                    .padding()
-                } else if isTimelapseActive {
-                    TimelapsePanel(
-                        isTimelapseActive: $isTimelapseActive,
-                        timelapseStartDate: $timelapseStartDate,
-                        timelapseEndDate: $timelapseEndDate,
-                        timelapseCurrentDate: $timelapseCurrentDate,
-                        locationRecords: locationRecords
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
-                }
+                .transition(.scale(scale: 0.92).combined(with: .opacity))
+                .zIndex(99)
             }
         }
     }
 
-    private var nativeDetentBinding: Binding<PresentationDetent> {
-        Binding<PresentationDetent>(
-            get: {
-                switch sheetPosition {
-                case .collapsed:
-                    return .height(80)
-                case .medium:
-                    return .medium
-                case .large:
-                    return .large
+    /// Builds the sequenced long-press + drag gesture used to capture a map coordinate.
+    private func longPressGesture(proxy: MapProxy) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.5)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onEnded { value in
+                // Reset first so any existing alert is dismissed before the new coordinate arrives.
+                longPressAlertCoordinate = nil
+                if case .second(true, let dragValue) = value, let drag = dragValue {
+                    if let coordinate = proxy.convert(drag.location, from: .local) {
+                        // Dispatch async so the nil-reset is committed to SwiftUI before
+                        // we set the new coordinate, preventing a mid-render flicker.
+                        DispatchQueue.main.async {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                longPressAlertCoordinate = coordinate
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    // MARK: - Bottom Overlay
+
+    @ViewBuilder
+    private var bottomOverlay: some View {
+        if locationRecords.isEmpty {
+            EmptyMapHint {
+                addLocationContext = AddLocationSheetContext(coordinate: nil)
+            }
+            .padding()
+        } else if isTimelapseActive {
+            TimelapsePanel(
+                isTimelapseActive: $isTimelapseActive,
+                timelapseStartDate: $timelapseStartDate,
+                timelapseEndDate: $timelapseEndDate,
+                timelapseCurrentDate: $timelapseCurrentDate,
+                locationRecords: locationRecords
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+        }
+    }
+
+    // MARK: - Sheet Background
+
+    /// Attaches all sheet presentations to invisible Color.clear views so they don't
+    /// interfere with the map's hit-testing.
+    private var sheetBackground: some View {
+        ZStack {
+            Color.clear
+                .sheet(isPresented: $isShowingLocationDetails) {
+                    LocationDetailSheet(record: selectedRecord)
+                        .presentationDetents([.medium])
+                        .presentationDragIndicator(.visible)
+                }
+            Color.clear
+                .sheet(isPresented: $isShowingLegendSheet) {
+                    FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                }
+            Color.clear
+                .sheet(item: $addLocationContext) { context in
+                    AddLocationSheet(initialCoordinate: context.coordinate)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+            Color.clear
+                .sheet(item: $presetLocationContext) { context in
+                    ManageSavedLocationsSheet(initialCoordinate: context.coordinate)
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                }
+        }
+    }
+
+    // MARK: - Search Sheet
+
+    private var searchSheet: some View {
+        SearchBottomSheet(
+            searchText: $searchText,
+            sheetPosition: $sheetPosition,
+            isShowingManagePresets: $isShowingManagePresets,
+            isSearchFieldFocused: $isSearchFieldFocused,
+            searchCompleter: searchCompleter,
+            savedLocations: savedLocations,
+            searchResults: searchResults,
+            members: members,
+            onSelectResult: { item in
+                if item.subtitle == "fit_all" {
+                    fitCameraToSavedLocations()
+                    withAnimation { sheetPosition = .collapsed }
+                } else {
+                    flyTo(item)
                 }
             },
-            set: { newValue in
-                if newValue == .medium {
-                    sheetPosition = .medium
-                } else if newValue == .large {
-                    sheetPosition = .large
-                } else {
-                    sheetPosition = .collapsed
-                }
+            onSelectCompletion: { completion in
+                flyTo(completion)
             }
         )
+        .padding(sheetPosition == .collapsed ? 0 : 10)
+        .presentationDetents([.height(80), .medium, .large], selection: nativeDetentBinding)
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .interactiveDismissDisabled()
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(50)
+        .presentationBackground(.clear)
     }
-
-    // Filtered records reflecting the active legend selections and the time-lapse slider limit if active.
-    private var filteredRecords: [LocationRecord] {
-        let baseRecords = locationRecords.filter { record in
-            if let member = record.member {
-                return !hiddenMemberIDs.contains(member.id)
-            }
-            return true
-        }
-        
-        if isTimelapseActive {
-            return baseRecords.filter { record in
-                record.timestamp >= timelapseStartDate && record.timestamp <= timelapseCurrentDate
-            }
-        }
-        
-        return baseRecords
-    }
-
-    // Latest location record for each non-hidden member.
-    private var latestMemberRecords: [LocationRecord] {
-        let baseRecords = locationRecords.filter { record in
-            if let member = record.member {
-                return !hiddenMemberIDs.contains(member.id)
-            }
-            return true
-        }
-        
-        let grouped = Dictionary(grouping: baseRecords) { $0.member?.id }
-        return grouped.values.compactMap { records in
-            records.max(by: { $0.timestamp < $1.timestamp })
-        }
-    }
-
-    // Latest check-in for each member up to the current simulated date during time-lapse mode.
-    private var activeTimelapseMarkers: [LocationRecord] {
-        let activeRecords = locationRecords.filter { record in
-            if let member = record.member {
-                return !hiddenMemberIDs.contains(member.id) &&
-                       record.timestamp >= timelapseStartDate &&
-                       record.timestamp <= timelapseCurrentDate
-            }
-            return false
-        }
-        
-        let grouped = Dictionary(grouping: activeRecords) { $0.member?.id }
-        return grouped.values.compactMap { records in
-            records.max(by: { $0.timestamp < $1.timestamp })
-        }
-    }
-
-    // The selected record is derived from MapKit's selected UUID and the latest SwiftData query result.
-    private var selectedRecord: LocationRecord? {
-        locationRecords.first { $0.id == selectedRecordID }
-    }
-
-    // The records to show on the map depending on active modes (timelapse, track record, or default latest).
-    private var recordsToCluster: [LocationRecord] {
-        if isTimelapseActive {
-            return activeTimelapseMarkers
-        } else if isTrackRecordActive {
-            return filteredRecords
-        } else {
-            return latestMemberRecords
-        }
-    }
-
-    private var clusters: [LocationCluster] {
-        clusterLocations(recordsToCluster)
-    }
-
-
-
-    // Journey groups convert raw SwiftData records into MapKit-friendly polyline inputs.
-    private var journeyGroups: [JourneyGroup] {
-        let groupedRecords = Dictionary(grouping: filteredRecords) { record in
-            record.member
-        }
-
-        let visibleMembers = groupedRecords.keys.compactMap { $0 }
-
-        return visibleMembers.sorted(by: { $0.name < $1.name }).compactMap { member in
-            guard let records = groupedRecords[member] else {
-                return nil
-            }
-
-            let sortedRecords = records.sorted { first, second in
-                first.timestamp < second.timestamp
-            }
-
-            return JourneyGroup(
-                memberName: member.name,
-                color: member.color,
-                coordinates: sortedRecords.map(\.coordinate)
-            )
-        }
-    }
-
-    // This helper moves the map camera to a region that includes all saved records.
-    private func fitCameraToSavedLocations() {
-        let visibleRecords = locationRecords.filter { record in
-            if let member = record.member {
-                return !hiddenMemberIDs.contains(member.id)
-            }
-            return true
-        }
-        let region = MKCoordinateRegion.region(fitting: visibleRecords, defaultRegion: Self.defaultRegion)
-        cameraPosition = .region(region)
-    }
-
-
-
-    // The default region centers on Indonesia before any saved SwiftData records exist.
-    private static let defaultRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: -2.5489, longitude: 118.0149),
-        span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
-    )
-
-
-
-    // Cluster location records within a specific radius in meters
-    private func clusterLocations(_ records: [LocationRecord], radiusMeters: Double = 50.0) -> [LocationCluster] {
-        var clusters: [LocationCluster] = []
-        
-        for record in records {
-            let recordLoc = CLLocation(latitude: record.latitude, longitude: record.longitude)
-            
-            if let index = clusters.firstIndex(where: { cluster in
-                let clusterLoc = CLLocation(latitude: cluster.coordinate.latitude, longitude: cluster.coordinate.longitude)
-                return recordLoc.distance(from: clusterLoc) < radiusMeters
-            }) {
-                let existingCluster = clusters[index]
-                var updatedRecords = existingCluster.records
-                updatedRecords.append(record)
-                
-                let stableId = generateStableClusterId(for: updatedRecords)
-                clusters[index] = LocationCluster(
-                    id: stableId,
-                    coordinate: existingCluster.coordinate,
-                    records: updatedRecords
-                )
-            } else {
-                let stableId = generateStableClusterId(for: [record])
-                clusters.append(LocationCluster(
-                    id: stableId,
-                    coordinate: record.coordinate,
-                    records: [record]
-                ))
-            }
-        }
-        
-        return clusters
-    }
-
-    private func generateStableClusterId(for records: [LocationRecord]) -> String {
-        if isTimelapseActive {
-            // Use member IDs so identity is tied to the moving member
-            let memberIds = records.compactMap { $0.member?.id.uuidString }
-            return memberIds.sorted().joined(separator: "-")
-        } else {
-            // Use record IDs
-            let recordIds = records.map { $0.id.uuidString }
-            return recordIds.sorted().joined(separator: "-")
-        }
-    }
-
-
-    // MARK: - Search Functionality
-    
-    private var searchResults: [SearchResultItem] {
-        guard !searchText.isEmpty else { return [] }
-        
-        let keyword = searchText.lowercased()
-        var results: [SearchResultItem] = []
-        
-        // 1. Filter Location Records (Family Member Stops)
-        for record in locationRecords {
-            let cityNameMatches = record.cityName.lowercased().contains(keyword)
-            let memberNameMatches = record.member?.name.lowercased().contains(keyword) ?? false
-            if cityNameMatches || memberNameMatches {
-                results.append(SearchResultItem(
-                    id: record.id.uuidString,
-                    title: record.cityName,
-                    subtitle: "Stop by \(record.member?.name ?? "Unknown")",
-                    systemImage: "mappin.circle.fill",
-                    coordinate: CLLocationCoordinate2D(latitude: record.latitude, longitude: record.longitude)
-                ))
-            }
-        }
-        
-        // 2. Filter Saved Locations (Preset Locations)
-        for location in savedLocations {
-            if location.name.lowercased().contains(keyword) {
-                results.append(SearchResultItem(
-                    id: location.id.uuidString,
-                    title: location.name,
-                    subtitle: "Preset Location",
-                    systemImage: "mappin.and.ellipse",
-                    coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
-                ))
-            }
-        }
-        
-        return results
-    }
-
-    private func flyTo(_ item: SearchResultItem) {
-        withAnimation(.easeInOut(duration: 1.2)) {
-            cameraPosition = .region(MKCoordinateRegion(
-                center: item.coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-            ))
-        }
-        
-        // Auto-select record if it is a LocationRecord stop
-        if let recordUUID = UUID(uuidString: item.id),
-           locationRecords.contains(where: { $0.id == recordUUID }) {
-            selectedRecordID = recordUUID
-        }
-        
-        searchText = ""
-        withAnimation {
-            sheetPosition = .collapsed
-        }
-    }
-
-    private func flyTo(_ completion: MKLocalSearchCompletion) {
-        let searchRequest = MKLocalSearch.Request(completion: completion)
-        let search = MKLocalSearch(request: searchRequest)
-        search.start { response, error in
-            guard let coordinate = response?.mapItems.first?.placemark.coordinate else { return }
-            
-            withAnimation(.easeInOut(duration: 1.2)) {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                ))
-            }
-        }
-        
-        searchText = ""
-        withAnimation {
-            sheetPosition = .collapsed
-        }
-    }
-
 }
 
 #Preview {
