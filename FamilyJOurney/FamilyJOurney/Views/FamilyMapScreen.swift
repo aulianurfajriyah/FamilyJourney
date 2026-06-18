@@ -5,7 +5,6 @@
 //  Created by Aulia Nur Fajriyah on 10/06/26.
 //
 
-import Combine
 import CoreLocation
 import MapKit
 import SwiftData
@@ -48,6 +47,16 @@ struct FamilyMapScreen: View {
 
     // Stores the IDs of family members whose journeys are currently hidden.
     @State private var hiddenMemberIDs: Set<UUID> = []
+    
+    // Querying saved locations for search
+    @Query(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
+    
+    // Search states
+    @State private var searchText = ""
+    @State private var sheetPosition: SearchSheetPosition = .collapsed
+    @State private var isShowingManagePresets = false
+    @FocusState private var isSearchFieldFocused: Bool
+    @StateObject private var searchCompleter = MapSearchCompleter()
     
     @Namespace private var mapScope
 
@@ -121,23 +130,86 @@ struct FamilyMapScreen: View {
             .onChange(of: locationRecords.map(\.id)) { _, _ in
                 fitCameraToSavedLocations()
             }
-            .sheet(isPresented: $isShowingLocationDetails) {
-                LocationDetailSheet(record: selectedRecord)
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-            }
-            .sheet(isPresented: $isShowingAddLocationSheet) {
-                AddLocationSheet()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-            .sheet(isPresented: $isShowingLegendSheet) {
-                FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+            .background(
+                ZStack {
+                    Color.clear
+                        .sheet(isPresented: $isShowingLocationDetails) {
+                            LocationDetailSheet(record: selectedRecord)
+                                .presentationDetents([.medium])
+                                .presentationDragIndicator(.visible)
+                        }
+                    Color.clear
+                        .sheet(isPresented: $isShowingAddLocationSheet) {
+                            AddLocationSheet()
+                                .presentationDetents([.large])
+                                .presentationDragIndicator(.visible)
+                        }
+                    Color.clear
+                        .sheet(isPresented: $isShowingLegendSheet) {
+                            FamilyLegendSheet(hiddenMemberIDs: $hiddenMemberIDs)
+                                .presentationDetents([.medium, .large])
+                                .presentationDragIndicator(.visible)
+                        }
+                    Color.clear
+                        .sheet(isPresented: $isShowingManagePresets) {
+                            ManageSavedLocationsSheet()
+                                .presentationDetents([.medium, .large])
+                                .presentationDragIndicator(.visible)
+                        }
+                }
+            )
+            .sheet(isPresented: Binding(
+                get: { !locationRecords.isEmpty && !isTimelapseActive },
+                set: { _ in }
+            )) {
+                SearchBottomSheet(
+                    searchText: $searchText,
+                    sheetPosition: $sheetPosition,
+                    isShowingManagePresets: $isShowingManagePresets,
+                    isSearchFieldFocused: $isSearchFieldFocused,
+                    searchCompleter: searchCompleter,
+                    savedLocations: savedLocations,
+                    searchResults: searchResults,
+                    members: members,
+                    onSelectResult: { item in
+                        if item.subtitle == "fit_all" {
+                            fitCameraToSavedLocations()
+                            withAnimation {
+                                sheetPosition = .collapsed
+                            }
+                        } else {
+                            flyTo(item)
+                        }
+                    },
+                    onSelectCompletion: { completion in
+                        flyTo(completion)
+                    }
+                )
+                .padding(sheetPosition == .collapsed ? 0 : 10)
+                .presentationDetents([.height(80), .medium, .large], selection: nativeDetentBinding)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .interactiveDismissDisabled()
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(50)
+                .presentationBackground(.clear)
             }
             .onChange(of: hiddenMemberIDs) { _, _ in
                 fitCameraToSavedLocations()
+            }
+            .onChange(of: isSearchFieldFocused) { _, isFocused in
+                if isFocused {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        sheetPosition = .medium
+                    }
+                }
+            }
+            .onChange(of: searchText) { _, newValue in
+                searchCompleter.updateQuery(newValue)
+                if !newValue.isEmpty {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        sheetPosition = .large
+                    }
+                }
             }
             .overlay(alignment: .bottom) {
                 if locationRecords.isEmpty {
@@ -158,6 +230,30 @@ struct FamilyMapScreen: View {
                 }
             }
         }
+    }
+
+    private var nativeDetentBinding: Binding<PresentationDetent> {
+        Binding<PresentationDetent>(
+            get: {
+                switch sheetPosition {
+                case .collapsed:
+                    return .height(80)
+                case .medium:
+                    return .medium
+                case .large:
+                    return .large
+                }
+            },
+            set: { newValue in
+                if newValue == .medium {
+                    sheetPosition = .medium
+                } else if newValue == .large {
+                    sheetPosition = .large
+                } else {
+                    sheetPosition = .collapsed
+                }
+            }
+        )
     }
 
     // Filtered records reflecting the active legend selections and the time-lapse slider limit if active.
@@ -325,6 +421,85 @@ struct FamilyMapScreen: View {
         }
     }
 
+
+    // MARK: - Search Functionality
+    
+    private var searchResults: [SearchResultItem] {
+        guard !searchText.isEmpty else { return [] }
+        
+        let keyword = searchText.lowercased()
+        var results: [SearchResultItem] = []
+        
+        // 1. Filter Location Records (Family Member Stops)
+        for record in locationRecords {
+            let cityNameMatches = record.cityName.lowercased().contains(keyword)
+            let memberNameMatches = record.member?.name.lowercased().contains(keyword) ?? false
+            if cityNameMatches || memberNameMatches {
+                results.append(SearchResultItem(
+                    id: record.id.uuidString,
+                    title: record.cityName,
+                    subtitle: "Stop by \(record.member?.name ?? "Unknown")",
+                    systemImage: "mappin.circle.fill",
+                    coordinate: CLLocationCoordinate2D(latitude: record.latitude, longitude: record.longitude)
+                ))
+            }
+        }
+        
+        // 2. Filter Saved Locations (Preset Locations)
+        for location in savedLocations {
+            if location.name.lowercased().contains(keyword) {
+                results.append(SearchResultItem(
+                    id: location.id.uuidString,
+                    title: location.name,
+                    subtitle: "Preset Location",
+                    systemImage: "mappin.and.ellipse",
+                    coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+                ))
+            }
+        }
+        
+        return results
+    }
+
+    private func flyTo(_ item: SearchResultItem) {
+        withAnimation(.easeInOut(duration: 1.2)) {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: item.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            ))
+        }
+        
+        // Auto-select record if it is a LocationRecord stop
+        if let recordUUID = UUID(uuidString: item.id),
+           locationRecords.contains(where: { $0.id == recordUUID }) {
+            selectedRecordID = recordUUID
+        }
+        
+        searchText = ""
+        withAnimation {
+            sheetPosition = .collapsed
+        }
+    }
+
+    private func flyTo(_ completion: MKLocalSearchCompletion) {
+        let searchRequest = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: searchRequest)
+        search.start { response, error in
+            guard let coordinate = response?.mapItems.first?.placemark.coordinate else { return }
+            
+            withAnimation(.easeInOut(duration: 1.2)) {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                ))
+            }
+        }
+        
+        searchText = ""
+        withAnimation {
+            sheetPosition = .collapsed
+        }
+    }
 
 }
 
