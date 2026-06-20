@@ -9,9 +9,6 @@ import CoreLocation
 import SwiftUI
 
 // MARK: - LongPressAlertOverlay
-// Extracted into its own file to keep FamilyMapScreen's body simple enough for
-// Swift's type-checker. The overlay shows a centred action card that lets the
-// user choose what to do with a long-pressed map coordinate.
 struct LongPressAlertOverlay: View {
     let coordinate: CLLocationCoordinate2D
     var onDismiss: () -> Void
@@ -20,7 +17,6 @@ struct LongPressAlertOverlay: View {
 
     var body: some View {
         ZStack {
-            // Dim backdrop – tapping dismisses the card
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }

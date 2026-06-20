@@ -34,7 +34,6 @@ extension FamilyMapScreen {
             }
         }
 
-        // 2. Filter Saved Locations (Preset Locations)
         for location in savedLocations {
             if location.name.lowercased().contains(keyword) {
                 results.append(SearchResultItem(
@@ -59,14 +58,14 @@ extension FamilyMapScreen {
             ))
         }
 
-        // Auto-select record if it is a LocationRecord stop
         if let recordUUID = UUID(uuidString: item.id),
            locationRecords.contains(where: { $0.id == recordUUID }) {
             selectedRecordID = recordUUID
         }
 
+        
+        isSearchFieldFocused = false
         searchText = ""
-        withAnimation { sheetPosition = .collapsed }
     }
 
     /// Resolves a MapKit search completion to coordinates and animates the camera there.
@@ -84,7 +83,8 @@ extension FamilyMapScreen {
             }
         }
 
+        
+        isSearchFieldFocused = false
         searchText = ""
-        withAnimation { sheetPosition = .collapsed }
     }
 }

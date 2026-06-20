@@ -14,8 +14,6 @@ extension FamilyMapScreen {
 
     // MARK: Presentation Detent Bridge
 
-    /// Maps the internal SearchSheetPosition enum to the native PresentationDetent
-    /// type that SwiftUI's sheet modifier requires.
     var nativeDetentBinding: Binding<PresentationDetent> {
         Binding<PresentationDetent>(
             get: {
@@ -39,7 +37,6 @@ extension FamilyMapScreen {
 
     // MARK: Filtered Record Sets
 
-    /// Records filtered by hidden-member state and, when active, by the timelapse date window.
     var filteredRecords: [LocationRecord] {
         let baseRecords = locationRecords.filter { record in
             if let member = record.member {

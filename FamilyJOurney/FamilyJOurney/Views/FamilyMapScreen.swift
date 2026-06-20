@@ -10,25 +10,13 @@ import MapKit
 import SwiftData
 import SwiftUI
 
-// FamilyMapScreen owns the SwiftData query, MapKit camera state, and marker selection state.
-// Business logic is split across:
-//   • FamilyMapScreen+DataLogic.swift  – computed properties, clustering, camera helpers
-//   • FamilyMapScreen+Search.swift     – search results and flyTo helpers
-// UI sub-components live in Views/Components/:
-//   • MapUtilityButtons.swift          – top-trailing button cluster
-//   • LongPressAlertOverlay.swift      – long-press action card
-//   • FamilyMapToolbar.swift           – navigation bar buttons
 struct FamilyMapScreen: View {
 
     // MARK: - SwiftData Queries
 
-    /// All location records, sorted oldest-first so polylines draw in chronological order.
+   
     @Query(sort: \LocationRecord.timestamp) var locationRecords: [LocationRecord]
-
-    /// Querying members forces a re-render whenever name/color/emoji changes.
     @Query(sort: \FamilyMember.name) var members: [FamilyMember]
-
-    /// Saved preset locations used for search.
     @Query(sort: \SavedLocation.name) var savedLocations: [SavedLocation]
 
     // MARK: - Environment
@@ -73,8 +61,6 @@ struct FamilyMapScreen: View {
 
     // MARK: - Long-Press State
 
-    /// A single optional drives the long-press alert. Using one variable instead of
-    /// two (a Bool + an optional coordinate) avoids the flicker race condition.
     @State var longPressAlertCoordinate: CLLocationCoordinate2D? = nil
 
     // MARK: - Search State
@@ -82,7 +68,7 @@ struct FamilyMapScreen: View {
     @State var searchText = ""
     @State var sheetPosition: SearchSheetPosition = .collapsed
     @State private var isShowingManagePresets = false
-    @FocusState private var isSearchFieldFocused: Bool
+    @FocusState var isSearchFieldFocused: Bool
     @StateObject private var searchCompleter = MapSearchCompleter()
 
     // MARK: - Body
@@ -98,7 +84,7 @@ struct FamilyMapScreen: View {
                     )
                 }
                 .overlay(alignment: .bottom) { bottomOverlay }
-                .navigationTitle("Family Journey")
+//                .navigationTitle("Family Journey")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     FamilyMapToolbar(
@@ -125,16 +111,18 @@ struct FamilyMapScreen: View {
                 .onChange(of: isSearchFieldFocused) { _, isFocused in
                     if isFocused {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            sheetPosition = .medium
+                            sheetPosition = .large
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            sheetPosition = .collapsed
                         }
                     }
                 }
                 .onChange(of: searchText) { _, newValue in
                     searchCompleter.updateQuery(newValue)
-                    if !newValue.isEmpty {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            sheetPosition = .large
-                        }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        sheetPosition = newValue.isEmpty ? .collapsed : .large
                     }
                 }
                 .onChange(of: isShowingManagePresets) { _, newValue in
@@ -199,12 +187,10 @@ struct FamilyMapScreen: View {
         LongPressGesture(minimumDuration: 0.5)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onEnded { value in
-                // Reset first so any existing alert is dismissed before the new coordinate arrives.
                 longPressAlertCoordinate = nil
                 if case .second(true, let dragValue) = value, let drag = dragValue {
                     if let coordinate = proxy.convert(drag.location, from: .local) {
-                        // Dispatch async so the nil-reset is committed to SwiftUI before
-                        // we set the new coordinate, preventing a mid-render flicker.
+                        
                         DispatchQueue.main.async {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                 longPressAlertCoordinate = coordinate
@@ -239,8 +225,6 @@ struct FamilyMapScreen: View {
 
     // MARK: - Sheet Background
 
-    /// Attaches all sheet presentations to invisible Color.clear views so they don't
-    /// interfere with the map's hit-testing.
     private var sheetBackground: some View {
         ZStack {
             Color.clear
@@ -305,7 +289,6 @@ struct FamilyMapScreen: View {
 }
 
 #Preview {
-    // The preview uses an in-memory SwiftData container so sample preview data never touches app storage.
     FamilyMapScreen()
         .modelContainer(for: [LocationRecord.self, FamilyMember.self], inMemory: true)
 }

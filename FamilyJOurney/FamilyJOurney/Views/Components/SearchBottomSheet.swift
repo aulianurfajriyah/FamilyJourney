@@ -37,7 +37,7 @@ struct SearchBottomSheet: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    
                     
                     TextField("Search stops or preset locations...", text: $searchText)
                         .textFieldStyle(.plain)
@@ -48,7 +48,7 @@ struct SearchBottomSheet: View {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
+                               
                         }
                         .buttonStyle(.plain)
                     }
@@ -71,7 +71,7 @@ struct SearchBottomSheet: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground))
+                .background(Color(.secondarySystemBackground)).opacity(0.4)
                 .cornerRadius(30)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -80,7 +80,7 @@ struct SearchBottomSheet: View {
             // Expanded content (VStack / ScrollView)
             if sheetPosition != .collapsed {
                 if searchText.isEmpty {
-                    // Default expanded contents (Places & Members)
+                    
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
                             // Places Section
@@ -89,14 +89,14 @@ struct SearchBottomSheet: View {
                                     Text("Places")
                                         .font(.headline)
                                         .fontWeight(.bold)
-                                    Image(systemName: "chevron.right")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
+//                                    Image(systemName: "chevron.right")
+//                                        .font(.subheadline)
+//                                        .foregroundColor(.secondary)
                                     Spacer()
                                 }
                                 .padding(.horizontal, 20)
                                 
-                                HStack(spacing: 16) {
+                                HStack(spacing: 10) {
                                     PlaceItemView(
                                         name: "Home",
                                         icon: "house.fill",
@@ -157,6 +157,7 @@ struct SearchBottomSheet: View {
                                         .font(.headline)
                                         .fontWeight(.bold)
                                     Spacer()
+                                        .padding(.bottom, 20)
                                 }
                                 .padding(.horizontal, 20)
                                 
@@ -167,7 +168,7 @@ struct SearchBottomSheet: View {
                                         .padding(.horizontal, 20)
                                 } else {
                                     ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 16) {
+                                        HStack(spacing: 10) {
                                             ForEach(members) { member in
                                                 MemberSearchItemView(member: member) {
                                                     if let latestStop = member.locations?.max(by: { $0.timestamp < $1.timestamp }) {
@@ -192,6 +193,7 @@ struct SearchBottomSheet: View {
                                             }
                                         }
                                         .padding(.horizontal, 20)
+                                        .padding(.top, 8)
                                     }
                                 }
                             }
