@@ -14,21 +14,14 @@ import SwiftUI
 final class FamilyMember {
     // Unique identifier for CloudKit compatibility and SwiftData tracking.
     var id: UUID = UUID()
-    
-    // The name of the family member, used to group their journeys.
     var name: String = ""
-    
-    // The name of the color used for rendering markers and polylines of this member.
     var colorName: String = "blue"
-    
-    // The emoji character representing this member's map avatar.
     var emoji: String = "👤"
     
     // Binary image data of custom profile photos or Memojis.
     @Attribute(.externalStorage)
     var avatarImageData: Data? = nil
     
-    // CloudKit compatible relationship: must be optional.
     // If a member is deleted, all their location records are cascade-deleted as well.
     @Relationship(deleteRule: .cascade, inverse: \LocationRecord.member)
     var locations: [LocationRecord]? = []

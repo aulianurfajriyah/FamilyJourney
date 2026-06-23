@@ -5,6 +5,7 @@
 //  Created by Antigravity on 11/06/26.
 //
 
+import CoreLocation
 import MapKit
 import SwiftData
 import SwiftUI
@@ -26,7 +27,7 @@ struct AddLocationSheet: View {
     // Form inputs
     @State private var selectedMemberID: UUID?
     @State private var newMemberName = ""
-    @State private var inputSource: LocationInputSource = .preset
+    @State private var inputSource: LocationInputSource
     @State private var selectedSavedLocationID: UUID?
     @State private var cityName = ""
     @State private var latitudeString = ""
@@ -36,10 +37,31 @@ struct AddLocationSheet: View {
     @State private var isShowingManagePresets = false
 
     // Map camera position centered on default Indonesia location
-    @State private var mapCameraPosition: MapCameraPosition = .region(MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: -2.5489, longitude: 118.0149),
-        span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
-    ))
+    @State private var mapCameraPosition: MapCameraPosition
+
+    var initialCoordinate: CLLocationCoordinate2D?
+
+    init(initialCoordinate: CLLocationCoordinate2D? = nil) {
+        self.initialCoordinate = initialCoordinate
+        
+        if let coordinate = initialCoordinate {
+            _inputSource = State(initialValue: .manual)
+            _latitudeString = State(initialValue: String(format: "%.6f", coordinate.latitude))
+            _longitudeString = State(initialValue: String(format: "%.6f", coordinate.longitude))
+            _mapCameraPosition = State(initialValue: .region(MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+            )))
+        } else {
+            _inputSource = State(initialValue: .preset)
+            _latitudeString = State(initialValue: "")
+            _longitudeString = State(initialValue: "")
+            _mapCameraPosition = State(initialValue: .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: -2.5489, longitude: 118.0149),
+                span: MKCoordinateSpan(latitudeDelta: 25, longitudeDelta: 35)
+            )))
+        }
+    }
 
     private var selectedSavedLocation: SavedLocation? {
         savedLocations.first { $0.id == selectedSavedLocationID }
@@ -134,6 +156,11 @@ struct AddLocationSheet: View {
                     .font(.body)
                 }
             }
+            .onAppear {
+                if let coordinate = initialCoordinate {
+                    geocodeCoordinate(coordinate)
+                }
+            }
         }
     }
 
@@ -201,6 +228,30 @@ struct AddLocationSheet: View {
         try? modelContext.save()
         
         dismiss()
+    }
+
+    private func geocodeCoordinate(_ coordinate: CLLocationCoordinate2D) {
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+            guard let placemark = placemarks?.first, error == nil else { return }
+            
+            var addressParts: [String] = []
+            if let name = placemark.name {
+                addressParts.append(name)
+            }
+            if let locality = placemark.locality, placemark.name != locality {
+                addressParts.append(locality)
+            }
+            if let adminArea = placemark.administrativeArea, placemark.locality != adminArea {
+                addressParts.append(adminArea)
+            }
+            
+            let resolvedCityName = addressParts.joined(separator: ", ")
+            if !resolvedCityName.isEmpty {
+                self.cityName = resolvedCityName
+            }
+        }
     }
 }
 

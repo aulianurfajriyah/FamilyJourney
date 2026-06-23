@@ -22,19 +22,21 @@ struct PresetLocationSection: View {
     var body: some View {
         Group {
             if savedLocations.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(spacing: 12) {
                     Text("No saved locations available.")
                         .font(.body)
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                     
                     Button(action: { isShowingManagePresets = true }) {
-                        Label("Manage Preset Locations", systemImage: "mappin.circle.fill")
+                        Text("Manage Preset Locations")
                             .font(.body)
-                            .fontWeight(.semibold)
                     }
                     .buttonStyle(.borderedProminent)
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 4)
+                
             } else {
                 HStack {
                     Picker("Select Place", selection: $selectedSavedLocationID) {
